@@ -91,6 +91,19 @@ tr:nth-child(even) { background: #fafafa; }
 .autopilot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; }
 .autopilot-grid .kv { border: 1px solid #ececec; padding: 6px 8px; border-radius: 4px; background: #fafafa; }
 #auto-config { max-height: 180px; overflow-y: auto; }
+.autopilot-columns { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.auto-col { flex: 1 1 340px; min-width: 320px; }
+.field-help { font-size: 11px; color: #666; display: block; line-height: 1.3; }
+.autopilot-actions { margin-top: 16px; }
+.autopilot-usage canvas { width: 100%; height: 280px; }
+.autopilot-field-guide dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 20px; margin: 0; }
+.autopilot-field-guide dt { font-weight: bold; margin-bottom: 4px; }
+.autopilot-field-guide dd { margin: 0 0 14px 0; font-size: 13px; color: #444; }
+.autopilot-intro { font-size: 13px; }
+
+@media (max-width: 800px) {
+    .auto-col { min-width: 100%; }
+}
 
 /* Side panel */
 .side-panel { position: fixed; top: 12px; right: 12px; width: 240px; border: 1px solid #e3e3e3; background: #ffffff; border-radius: 6px; padding: 10px; box-shadow: 0 1px 6px rgba(0,0,0,0.05); z-index: 100; }

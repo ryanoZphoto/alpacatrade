@@ -26,8 +26,86 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         if (el) el.classList.remove('hidden');
         // Refresh status when switching back to Status tab
         if (tab === 'status-tab') { refreshStatus(); refreshLogs(); }
+        if (tab === 'autopilot-tab') {
+            const chart = ensureAutopilotChart();
+            if (chart) {
+                chart.data.datasets[0].data = autopilotHistory.map(d => ({ x: d.t, y: d.capital }));
+                chart.data.datasets[1].data = autopilotHistory.map(d => ({ x: d.t, y: d.pnl }));
+                chart.update();
+            }
+        }
     });
 });
+
+const autopilotHistory = [];
+let autopilotChart = null;
+
+function ensureAutopilotChart() {
+    if (autopilotChart) return autopilotChart;
+    const canvas = document.getElementById('autopilot-usage-canvas');
+    if (!canvas || !window.Chart) return null;
+    if (!canvas.offsetWidth) return null;
+    const ctx = canvas.getContext('2d');
+    autopilotChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            datasets: [
+                {
+                    label: 'Capital Used (USD)',
+                    data: [],
+                    borderColor: '#2563eb',
+                    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                    fill: false,
+                    tension: 0.2,
+                    pointRadius: 0,
+                    yAxisID: 'y'
+                },
+                {
+                    label: 'Net P/L (USD)',
+                    data: [],
+                    borderColor: '#16a34a',
+                    backgroundColor: 'rgba(22, 163, 74, 0.1)',
+                    fill: false,
+                    tension: 0.2,
+                    pointRadius: 0,
+                    yAxisID: 'y1'
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            parsing: false,
+            scales: {
+                x: { type: 'time', time: { unit: 'minute' }, ticks: { autoSkip: true } },
+                y: {
+                    position: 'left',
+                    ticks: {
+                        callback: v => Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 })
+                    },
+                    title: { display: true, text: 'Capital Used (USD)' }
+                },
+                y1: {
+                    position: 'right',
+                    grid: { drawOnChartArea: false },
+                    ticks: {
+                        callback: v => Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 })
+                    },
+                    title: { display: true, text: 'Net P/L (USD)' }
+                }
+            },
+            plugins: {
+                legend: { position: 'bottom' },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => `${ctx.dataset.label}: $${Number(ctx.parsed.y).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+                    }
+                }
+            }
+        }
+    });
+    return autopilotChart;
+}
 
 async function apiGet(path, params = {}) {
     const url = new URL(`/api/${path}`, location.origin);
@@ -363,6 +441,21 @@ async function refreshStatus() {
         setText('m-capused', fmt(capitalUsed, 2));
         setText('m-maxnotional', fmt(maxNotional, 2));
         setText('m-remaining', fmt(remaining, 2));
+        const realized = Number.isFinite(st.realized_pnl) ? st.realized_pnl : 0;
+        const netPnl = realized + (Number.isFinite(upnlVal) ? upnlVal : 0);
+        const point = {
+            t: new Date(),
+            capital: Number.isFinite(capitalUsed) ? capitalUsed : 0,
+            pnl: Number.isFinite(netPnl) ? netPnl : 0
+        };
+        autopilotHistory.push(point);
+        if (autopilotHistory.length > 240) autopilotHistory.shift();
+        const chart = ensureAutopilotChart();
+        if (chart) {
+            chart.data.datasets[0].data = autopilotHistory.map(d => ({ x: d.t, y: d.capital }));
+            chart.data.datasets[1].data = autopilotHistory.map(d => ({ x: d.t, y: d.pnl }));
+            chart.update('none');
+        }
         // highlight if near exposure cap
         if (st.position_qty >= maxExposureBtc * 0.95) {
             document.getElementById('m-position').classList.add('negative');
@@ -457,3 +550,4 @@ setInterval(refreshStatus, 5000);
 setInterval(refreshLogs, 7000);
 refreshStatus();
 refreshLogs();
+ensureAutopilotChart();
