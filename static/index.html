@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Alpaca BTC Ladder Bot (Paper)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@3.3.0"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>Alpaca BTC‑USD Ladder Bot (Paper)
+        <span id="bot-state" class="badge badge-off">Stopped</span>
+    </h1>
+    <div id="last-action" class="banner"></div>
+    <div class="chips" id="state-chips">
+        <span class="chip" id="chip-bot">—</span>
+        <span class="chip" id="chip-flat">—</span>
+        <span class="chip" id="chip-orders">—</span>
+        <span class="chip" id="chip-risk">—</span>
+    </div>
+    <!-- Top PnL & Funds Strip -->
+    <div id="pnl-strip" class="pnl-strip">
+        <div class="pnl-item" title="Net position size and average entry price">
+            <div class="label">Your position</div>
+            <div class="value"><span id="strip-pos">0</span> @ <span id="strip-avg">0</span></div>
+        </div>
+        <div class="pnl-item" title="Unrealized P&L = (Last − Avg) × Position">
+            <div class="label">Open P&L</div>
+            <div class="value"><span id="strip-upnl" class="mono">0</span> (<span id="strip-upct">0</span>%)</div>
+        </div>
+        <div class="pnl-item" title="Realized P&L for trades filled today (UTC)">
+            <div class="label">Day P&L</div>
+            <div class="value mono" id="strip-day">0</div>
+        </div>
+        <div class="pnl-item" title="Capital used = |Position| × Last">
+            <div class="label">Capital used</div>
+            <div class="value mono" id="strip-used">0</div>
+        </div>
+        <div class="pnl-item" title="Capacity remaining = Max Ladder Notional − Capital used">
+            <div class="label">Capacity rem.</div>
+            <div class="value mono" id="strip-cap">0</div>
+        </div>
+        <div class="pnl-item" title="Open ladder rungs currently working">
+            <div class="label">Pending orders</div>
+            <div class="value mono" id="strip-open">0</div>
+        </div>
+        <div class="pnl-item" title="Cash available in Alpaca account">
+            <div class="label">Cash</div>
+            <div class="value mono" id="strip-cash">—</div>
+        </div>
+        <div class="pnl-item" title="Account equity (portfolio value)">
+            <div class="label">Equity</div>
+            <div class="value mono" id="strip-equity">—</div>
+        </div>
+        <div class="pnl-item" title="Buying power available for new positions">
+            <div class="label">Buying power</div>
+            <div class="value mono" id="strip-bp">—</div>
+        </div>
+    </div>
+
+    <!-- Compact Side Panel -->
+    <aside id="side-panel" class="side-panel">
+        <h3>Snapshot</h3>
+        <div class="kv"><span>Open rungs</span><span id="sp-open">0</span></div>
+        <div class="kv"><span>Position (BTC)</span><span id="sp-position">0</span></div>
+        <div class="kv"><span>Avg price</span><span id="sp-avg">0</span></div>
+        <div class="kv"><span>Last price</span><span id="sp-last">0</span></div>
+        <div class="kv"><span>Unrealized</span><span id="sp-upnl" class="mono">0</span></div>
+        <div class="kv"><span>Realized</span><span id="sp-rpnl" class="mono">0</span></div>
+        <div class="kv"><span>Capital used</span><span id="sp-used">0</span></div>
+        <div class="kv"><span>Capacity rem.</span><span id="sp-remaining">0</span></div>
+        <div class="kv"><span>Rung range</span><span id="sp-range">-</span></div>
+        <div class="kv small"><span>Last action</span><span id="sp-action">-</span></div>
+        <div class="mini-rungs">
+            <div class="mini-title small">Next rungs (approx)</div>
+            <ul id="sp-rungs" class="mono small"></ul>
+        </div>
+    </aside>
+
+    <!-- Quick Metrics -->
+    <section id="metrics">
+        <div class="card">
+            <div class="label">Position</div>
+            <div class="value" id="m-position">0</div>
+        </div>
+        <div class="card">
+            <div class="label">Avg Price</div>
+            <div class="value" id="m-avgprice">0</div>
+        </div>
+        <div class="card">
+            <div class="label">Realized PnL</div>
+            <div class="value" id="m-pnl">0</div>
+        </div>
+        <div class="card">
+            <div class="label">Open Orders</div>
+            <div class="value" id="m-openorders">0</div>
+        </div>
+        <div class="card">
+            <div class="label">Last Price</div>
+            <div class="value" id="m-last">0</div>
+        </div>
+        <div class="card">
+            <div class="label">Unrealized PnL</div>
+            <div class="value" id="m-upnl" class="upnl">0</div>
+        </div>
+        <div class="card">
+            <div class="label">Capital Used (est)</div>
+            <div class="value" id="m-capused">0</div>
+        </div>
+        <div class="card">
+            <div class="label">Max Ladder Notional</div>
+            <div class="value" id="m-maxnotional">0</div>
+        </div>
+        <div class="card">
+            <div class="label">Capacity Rem. (est)</div>
+            <div class="value" id="m-remaining">0</div>
+        </div>
+    </section>
+
+    <!-- Tabs -->
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="status-tab">Status</button>
+        <button class="tab-btn" data-tab="chart-tab">Chart</button>
+    </div>
+
+    <!-- Chart Tab (optional) -->
+    <section id="chart-tab" class="tab-content hidden">
+        <h2>Historical Candles</h2>
+        <div>
+            Symbol:
+            <input id="chart-symbol" type="text" value="BTC/USD" size="8">
+            Timeframe:
+            <select id="chart-timeframe">
+                <option value="5Min" selected>5Min</option>
+                <option value="15Min">15Min</option>
+                <option value="1Hour">1Hour</option>
+                <option value="1Day">1Day</option>
+            </select>
+            <button id="load-chart">Load Chart</button>
+        </div>
+        <canvas id="candles-canvas" width="900" height="400"></canvas>
+    </section>
+
+    <!-- Status Tab (wraps config + status panels) -->
+    <div id="status-tab" class="tab-content">
+    <!-- Ladder Config -->
+    <section id="ladder-section">
+        <h2>Ladder Configuration</h2>
+        <div class="help">Steps × Size = total BTC placed; Interval = $ distance between rungs. Max exposure caps live position size. Circuit breaker cancels all rungs and stops when 1‑min % range exceeds the threshold.</div>
+        <div class="presets">
+            Presets:
+            <button type="button" id="preset-cons">Conservative</button>
+            <button type="button" id="preset-neut">Neutral</button>
+            <button type="button" id="preset-aggr">Aggressive</button>
+        </div>
+        <form id="ladder-form">
+            <label>Symbol:
+                <input name="symbol" value="BTC/USD" required>
+            </label>
+            <label>Direction:
+                <select name="direction">
+                    <option value="BUY">Buy (Long)</option>
+                    <option value="SELL">Sell (Short)</option>
+                </select>
+            </label>
+            <label>Steps:
+                <input name="steps" type="number" value="5" min="1" max="20">
+            </label>
+            <label title="Dollar distance between rungs (spacing on the price ladder)">Interval (USD):
+                <input name="interval" type="number" step="0.01" value="200">
+            </label>
+            <label title="USD notional per rung; bot converts to BTC using the last price">Per‑rung notional (USD):
+                <input name="size" type="number" step="0.01" value="1000">
+            </label>
+            <label title="Maximum dollar exposure; bot converts to BTC using the last price">Max exposure (USD):
+                <input name="max_exposure" type="number" step="0.01"
+                       value="5000">
+            </label>
+            <div class="actions">
+                <button type="submit" id="start-btn" title="Start managing the ladder using the settings below">Start Ladder</button>
+                <button type="button" id="stop-btn" class="secondary" title="Cancel all open ladder orders and stop the bot">Stop Ladder</button>
+                <button type="button" id="close-all" class="danger" title="Instantly close the entire position at market and cancel all rungs">Close All (Market)</button>
+                <button type="button" id="cancel-open" class="secondary" title="Cancel all open ladder rungs only (keep any position)">Cancel Open (Rungs Only)</button>
+                <span class="spacer"></span>
+                <button type="button" id="nudge-up" title="Shift all rungs up by one interval">Nudge Up</button>
+                <button type="button" id="nudge-down" title="Shift all rungs down by one interval">Nudge Down</button>
+                <button type="button" id="recenter-now" title="Rebuild ladder centered on the current price">Recenter</button>
+                <label title="Automatically recenter when price drifts more than one interval"><input type="checkbox" id="auto-recenter"> Auto‑recenter</label>
+            </div>
+            <div class="action-help small">
+                <b>What the buttons do:</b>
+                <ul>
+                    <li><b>Start Ladder</b>: begins placing rungs using the settings above.</li>
+                    <li><b>Stop Ladder</b>: cancels all open rungs and stops the bot.</li>
+                    <li><b>Close All (Market)</b>: stops the bot, cancels rungs, and market‑closes your entire position.</li>
+                    <li><b>Cancel Open</b>: cancels rungs only; your current position remains.</li>
+                    <li><b>Nudge Up/Down</b>: shift every rung by one interval.</li>
+                    <li><b>Recenter</b>: rebuild the ladder around the current market price.</li>
+                    <li><b>Auto‑recenter</b>: auto recenter when price drifts more than one interval.</li>
+                </ul>
+            </div>
+        </form>
+
+        <div id="risk-panel" class="panel">
+            <h3>Risk Controls</h3>
+            <label><input type="checkbox" id="risk-enable-loss"> Daily loss cap (USD):</label>
+            <input id="risk-losscap" type="number" value="200" step="1">
+            <label><input type="checkbox" id="risk-enable-vol" checked> Circuit breaker (1‑min % range):</label>
+            <input id="risk-vol" type="number" value="0.7" step="0.1">
+        </div>
+
+        <div id="preview" class="panel">
+            <h3>Ladder Preview</h3>
+            <div class="preview-grid">
+                <div>
+                    <div>Total BTC: <span id="preview-total-btc">0</span></div>
+                    <div>Total notional (≈): $<span id="preview-total-notional">0</span></div>
+                    <div>Capital used now (≈): $<span id="preview-used">0</span></div>
+                    <div>Capacity remaining (≈): $<span id="preview-remaining">0</span></div>
+                    <div>Range: $<span id="preview-min">0</span> → $<span id="preview-max">0</span></div>
+                </div>
+                <div>
+                    <div>Rungs:</div>
+                    <ul id="preview-list" class="mono small"></ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel legend">
+            <h3>Controls & Metrics</h3>
+            <ul class="small">
+                <li><b>Steps</b>: number of rungs (orders) placed.</li>
+                <li><b>Interval</b>: dollar distance between consecutive rungs.</li>
+                <li><b>Per‑rung notional (USD)</b>: dollars per rung. Converted to BTC at the last price.</li>
+                <li><b>Max exposure (USD)</b>: maximum dollars deployed. Converted to BTC at the last price.</li>
+                <li><b>Capital Used</b>: current position × last price.</li>
+                <li><b>Max Ladder Notional</b>: steps × size × last price.</li>
+                <li><b>Capacity Remaining</b>: Max Notional − Capital Used (approx).</li>
+                <li><b>Nudge</b>: shift the ladder by one interval without changing spacing.</li>
+                <li><b>Recenter</b>: rebuild ladder centered on current price.</li>
+                <li><b>Circuit breaker</b>: if 1‑min high/low range exceeds your % threshold, the bot cancels all rungs and stops. You must press Start to resume.</li>
+            </ul>
+        </div>
+    </section>
+
+    <!-- Bot Status & Tables -->
+    <section id="status-section">
+        <h2>Bot Status</h2>
+        <div class="status-grid">
+            <div>
+                <h3>Summary (auto-refresh)</h3>
+                <pre id="status-box" class="mono">{}</pre>
+            </div>
+            <div>
+                <h3>Recent Logs</h3>
+                <pre id="log-box" class="mono"></pre>
+            </div>
+        </div>
+        <div class="tables">
+            <div class="table-wrap">
+                <h3>Open Orders</h3>
+                <table id="open-orders">
+                    <thead>
+                        <tr>
+                            <th>Side</th>
+                            <th>Qty</th>
+                            <th>Limit</th>
+                            <th>Status</th>
+                            <th>Id</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="table-wrap">
+                <h3>Recent Fills</h3>
+                <table id="filled-orders">
+                    <thead>
+                        <tr>
+                            <th>Side</th>
+                            <th>Qty</th>
+                            <th>Price</th>
+                            <th>Time</th>
+                            <th>Id</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="table-wrap">
+                <h3>Live Activity</h3>
+                <table id="activity">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Event</th>
+                            <th>Detail</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,106 @@
+body {
+    font-family: Arial, Helvetica, sans-serif;
+    margin: 20px;
+    max-width: 1100px;
+}
+section {
+    margin-bottom: 30px;
+    border: 1px solid #ddd;
+    padding: 15px;
+    border-radius: 4px;
+}
+label {
+    display: inline-block;
+    margin: 6px 12px 6px 0;
+}
+input, select, button {
+    margin-left: 6px;
+}
+pre.mono {
+    background: #0e1116;
+    color: #e7e7e7;
+    border: 1px solid #1f2630;
+    padding: 10px;
+    max-height: 260px;
+    overflow-y: auto;
+    font-size: 12px;
+}
+
+/* Header badge */
+.badge {
+    display: inline-block;
+    margin-left: 10px;
+    padding: 3px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    vertical-align: middle;
+}
+.badge-on { background: #e6ffed; color: #036d19; border: 1px solid #b4f5c2; }
+.badge-off { background: #ffecec; color: #8a1f11; border: 1px solid #f5b4b4; }
+
+/* Metrics cards */
+#metrics { display: grid; grid-template-columns: repeat(8, 1fr); gap: 12px; }
+.card { border: 1px solid #ddd; border-radius: 6px; padding: 10px; background: #fafafa; }
+.card .label { color: #666; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+.card .value { font-size: 20px; font-weight: bold; margin-top: 6px; }
+.help { color: #666; font-size: 12px; margin: 4px 0 10px; }
+
+.actions { margin-top: 10px; }
+button { padding: 6px 12px; }
+button.secondary { background: #eee; border: 1px solid #ccc; }
+button.danger { background: #ffe6e6; border: 1px solid #f2aaaa; color: #8a1f11; }
+
+/* Status layout */
+.status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* Tables */
+.table-wrap { margin-top: 16px; }
+#open-orders, #filled-orders, #activity { width: 100%; border-collapse: collapse; font-size: 13px; }
+#open-orders th, #open-orders td, #filled-orders th, #filled-orders td, #activity th, #activity td {
+    border: 1px solid #ddd;
+    padding: 6px 8px;
+    text-align: left;
+}
+#open-orders thead, #filled-orders thead, #activity thead { background: #f3f3f3; }
+tr:nth-child(even) { background: #fafafa; }
+
+.positive { color: #0a8a0a; }
+.negative { color: #c62828; }
+
+/* Banners */
+.banner { margin: 10px 0; padding: 8px 12px; border: 1px dashed #ccc; border-radius: 6px; background: #fffef5; font-size: 13px; }
+
+/* Tabs */
+.tabs { margin: 12px 0; }
+.tab-btn { padding: 6px 10px; border: 1px solid #ccc; background: #f3f3f3; margin-right: 6px; border-radius: 4px; }
+.tab-btn.active { background: #fff; border-bottom: 2px solid #000; }
+.tab-content.hidden { display: none; }
+
+/* Panels */
+.panel { border: 1px solid #e3e3e3; padding: 10px; border-radius: 6px; margin-top: 12px; background: #fcfcfc; }
+.preview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.spacer { display: inline-block; width: 10px; }
+.small { font-size: 12px; }
+.legend ul { margin: 6px 0 0; padding-left: 18px; }
+
+/* Side panel */
+.side-panel { position: fixed; top: 12px; right: 12px; width: 240px; border: 1px solid #e3e3e3; background: #ffffff; border-radius: 6px; padding: 10px; box-shadow: 0 1px 6px rgba(0,0,0,0.05); z-index: 100; }
+.side-panel h3 { margin: 0 0 8px 0; font-size: 14px; }
+.kv { display: flex; justify-content: space-between; padding: 2px 0; }
+.mini-rungs { margin-top: 8px; max-height: 120px; overflow-y: auto; border-top: 1px dashed #ddd; padding-top: 6px; }
+
+/* Top PnL & Funds Strip */
+.pnl-strip { position: sticky; top: 0; background: #111; color: #fff; padding: 10px; display: grid; grid-template-columns: repeat(9, minmax(140px, 1fr)); gap: 12px; z-index: 90; border-bottom: 1px solid #222; }
+.pnl-strip .label { font-size: 12px; opacity: 0.8; }
+.pnl-strip .value { font-size: 18px; font-weight: 600; }
+.pnl-strip .positive { color: #1ecb4f; }
+.pnl-strip .negative { color: #e55353; }
+@media (max-width: 1200px) { .pnl-strip { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 700px) { .pnl-strip { grid-template-columns: repeat(2, 1fr); } }
+
+/* Status chips */
+.chips { display: flex; gap: 8px; margin: 8px 0 12px; flex-wrap: wrap; }
+.chip { background: #f3f3f3; border: 1px solid #e1e1e1; border-radius: 16px; padding: 4px 10px; font-size: 12px; }
+.chip.ok { background: #e7f9ef; border-color: #c9f0d9; color: #117a2e; }
+.chip.warn { background: #fff5e6; border-color: #ffe0b3; color: #8a5a00; }
+.chip.err { background: #fdeaea; border-color: #f6caca; color: #9b1c1c; }
