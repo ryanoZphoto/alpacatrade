@@ -3,7 +3,7 @@ import math
 import asyncio
 import logging
 import statistics
-from fastapi import FastAPI, HTTPException, Depends, Response
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, validator
