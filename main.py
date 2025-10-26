@@ -3,7 +3,7 @@ import math
 import asyncio
 import logging
 import statistics
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Response
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, validator
@@ -456,6 +456,14 @@ class AutopilotManager:
                 bot_manager.manual_price = None
             async with self._lock:
                 self.applied_config = None
+            log.info(
+                "Autopilot HOLD: %s | trend %.2f%%, vol %.2f%%, RSI %.2f, price %.2f",
+                reason,
+                trend_pct,
+                volatility_pct,
+                rsi,
+                price,
+            )
             return
 
         interval_mult = 1.0
@@ -521,6 +529,12 @@ class AutopilotManager:
                 )
             async with self._lock:
                 self.applied_config = cfg
+            log.info(
+                "Autopilot maintaining %s ladder (%s) | %s",
+                cfg.direction,
+                cfg.symbol,
+                meta["reason"],
+            )
             return
 
         if running:
@@ -532,6 +546,16 @@ class AutopilotManager:
             )
         async with self._lock:
             self.applied_config = cfg
+        log.info(
+            "Autopilot set %s ladder (%s): steps=%d interval=$%.2f size=%f max_notional=$%.2f | %s",
+            cfg.direction,
+            cfg.symbol,
+            cfg.steps,
+            cfg.interval,
+            cfg.size,
+            meta["max_notional"],
+            meta["reason"],
+        )
 
     def snapshot(self) -> Dict[str, Optional[object]]:
         return {
