@@ -734,6 +734,12 @@ async def update_fills_and_position(client: httpx.AsyncClient,
 async def index():
     return FileResponse("static/index.html")
 
+
+@app.get("/favicon.ico")
+async def favicon():
+    # Browsers request a favicon automatically; return an empty 204 instead of a 404
+    return Response(status_code=204)
+
 @app.get("/api/bars")
 async def get_bars(params: BarParams = Depends()):
     endpoint = f"{ALPACA_DATA_URL}/v1beta3/crypto/us/bars"
