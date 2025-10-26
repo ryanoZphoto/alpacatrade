@@ -147,6 +147,47 @@ if (btnCancel) btnCancel.addEventListener('click', async ()=>{
     catch (e) { alert('Cancel-open error: '+e.message); }
 });
 
+/* ---------- Autopilot ---------- */
+const autopilotForm = document.getElementById('autopilot-form');
+if (autopilotForm) {
+    autopilotForm.addEventListener('submit', async e => {
+        e.preventDefault();
+        const fd = new FormData(autopilotForm);
+        const payload = {
+            symbol: String(fd.get('symbol') || '').trim(),
+            fast_window: Number(fd.get('fast_window')),
+            slow_window: Number(fd.get('slow_window')),
+            rsi_window: Number(fd.get('rsi_window')),
+            overbought: Number(fd.get('overbought')),
+            oversold: Number(fd.get('oversold')),
+            base_interval: Number(fd.get('base_interval')),
+            base_steps: Number(fd.get('base_steps')),
+            rung_notional: Number(fd.get('rung_notional')),
+            max_notional: Number(fd.get('max_notional')),
+            volatility_lookback: Number(fd.get('volatility_lookback')),
+            risk_multiplier: Number(fd.get('risk_multiplier')),
+            poll_seconds: Number(fd.get('poll_seconds')),
+        };
+        try {
+            await apiPost('start-autopilot', payload);
+            await refreshStatus();
+        } catch (err) {
+            alert('Autopilot start error: ' + err.message);
+        }
+    });
+}
+const stopAutoBtn = document.getElementById('stop-autopilot');
+if (stopAutoBtn) {
+    stopAutoBtn.addEventListener('click', async () => {
+        try {
+            await apiPost('stop-autopilot', {});
+            await refreshStatus();
+        } catch (err) {
+            alert('Autopilot stop error: ' + err.message);
+        }
+    });
+}
+
 // Presets
 const presets = {
     cons: { steps: 5, interval: 300, size: 0.005 },
@@ -232,6 +273,47 @@ function renderActivity(logLines) {
             <td>${ev.d || ''}</td>
         </tr>
     `).join('');
+}
+
+function updateAutopilotPanel(auto) {
+    const stateBadge = document.getElementById('auto-state');
+    if (!stateBadge) return;
+    const running = !!(auto && auto.running);
+    stateBadge.textContent = running ? 'Running' : 'Idle';
+    stateBadge.className = running ? 'badge badge-on' : 'badge badge-off';
+    const startBtn = document.getElementById('start-autopilot');
+    const stopBtn = document.getElementById('stop-autopilot');
+    if (startBtn) startBtn.disabled = running;
+    if (stopBtn) stopBtn.disabled = !running;
+    const set = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val;
+    };
+    set('auto-last-signal', auto?.last_signal || '—');
+    set('auto-last-reason', auto?.last_reason || '—');
+    const decision = auto?.last_decision || {};
+    set('auto-trend', decision.trend_pct != null ? `${decision.trend_pct.toFixed(2)}%` : '—');
+    set('auto-vol', decision.volatility_pct != null ? `${decision.volatility_pct.toFixed(2)}%` : '—');
+    set('auto-rsi', decision.rsi != null ? decision.rsi.toFixed(2) : '—');
+    set('auto-price', decision.price != null ? fmt(decision.price, 2) : '—');
+    const applied = auto?.applied_ladder;
+    if (applied) {
+        const summary = `${applied.direction} · ${applied.steps} steps @ $${Number(applied.interval).toFixed(2)} (size ${Number(applied.size).toFixed(6)})`;
+        set('auto-applied', summary);
+    } else {
+        set('auto-applied', '—');
+    }
+    set('auto-last-run', auto?.last_run ? new Date(auto.last_run).toLocaleTimeString() : '—');
+    const errEl = document.getElementById('auto-error');
+    if (errEl) {
+        const hasError = !!auto?.last_error;
+        errEl.textContent = hasError ? auto.last_error : '—';
+        errEl.classList.toggle('negative', hasError);
+    }
+    const cfgEl = document.getElementById('auto-config');
+    if (cfgEl) {
+        cfgEl.textContent = auto?.config ? JSON.stringify(auto.config, null, 2) : '{}';
+    }
 }
 
 let lastPriceCache = 0;
@@ -355,6 +437,8 @@ async function refreshStatus() {
         if (chipOrders) { chipOrders.textContent = openCount? `Open orders: ${openCount}` : 'Open orders: 0'; chipOrders.className = 'chip ' + (openCount? 'warn':'ok'); }
         const riskOK = document.getElementById('last-action')?.textContent.startsWith('OK:');
         if (chipRisk) { chipRisk.textContent = riskOK? 'Risk: OK' : 'Risk: Paused'; chipRisk.className = 'chip ' + (riskOK? 'ok':'err'); }
+
+        updateAutopilotPanel(st.autopilot);
     } catch (e) {
         document.getElementById('status-box').textContent = 'Error: '+e;
     }

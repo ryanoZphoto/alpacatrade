@@ -83,6 +83,15 @@ tr:nth-child(even) { background: #fafafa; }
 .small { font-size: 12px; }
 .legend ul { margin: 6px 0 0; padding-left: 18px; }
 
+/* Autopilot */
+#autopilot-section .autopilot-form label { display: flex; flex-direction: column; font-size: 12px; gap: 4px; }
+#autopilot-section .autopilot-form input { width: 100%; padding: 6px; box-sizing: border-box; }
+.auto-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.autopilot-panel { margin-top: 16px; }
+.autopilot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; }
+.autopilot-grid .kv { border: 1px solid #ececec; padding: 6px 8px; border-radius: 4px; background: #fafafa; }
+#auto-config { max-height: 180px; overflow-y: auto; }
+
 /* Side panel */
 .side-panel { position: fixed; top: 12px; right: 12px; width: 240px; border: 1px solid #e3e3e3; background: #ffffff; border-radius: 6px; padding: 10px; box-shadow: 0 1px 6px rgba(0,0,0,0.05); z-index: 100; }
 .side-panel h3 { margin: 0 0 8px 0; font-size: 14px; }
