@@ -244,6 +244,74 @@
         </div>
     </section>
 
+    <section id="autopilot-section">
+        <h2>Strategy Autopilot <span id="auto-state" class="badge badge-off">Idle</span></h2>
+        <div class="help">Configure a momentum + RSI driven controller that automatically keeps the ladder aligned with the trend. The bot adjusts spacing, steps, and size based on intraday volatility and trend strength. Autopilot converts USD notionals to the asset using the latest price.</div>
+        <form id="autopilot-form" class="autopilot-form">
+            <div class="auto-grid">
+                <label>Symbol
+                    <input name="symbol" value="BTC/USD" required>
+                </label>
+                <label>Fast EMA window
+                    <input name="fast_window" type="number" value="12" min="3" max="60">
+                </label>
+                <label>Slow EMA window
+                    <input name="slow_window" type="number" value="26" min="5" max="240">
+                </label>
+                <label>RSI window
+                    <input name="rsi_window" type="number" value="14" min="5" max="240">
+                </label>
+                <label>RSI overbought
+                    <input name="overbought" type="number" value="70" min="50" max="95" step="0.1">
+                </label>
+                <label>RSI oversold
+                    <input name="oversold" type="number" value="30" min="5" max="50" step="0.1">
+                </label>
+                <label>Base interval (USD)
+                    <input name="base_interval" type="number" value="150" step="0.01">
+                </label>
+                <label>Base steps
+                    <input name="base_steps" type="number" value="7" min="3" max="20">
+                </label>
+                <label>Per-rung notional (USD)
+                    <input name="rung_notional" type="number" value="1000" step="0.01">
+                </label>
+                <label>Max deployment (USD)
+                    <input name="max_notional" type="number" value="7000" step="0.01">
+                </label>
+                <label>Volatility lookback (bars)
+                    <input name="volatility_lookback" type="number" value="60" min="10" max="500">
+                </label>
+                <label>Risk multiplier
+                    <input name="risk_multiplier" type="number" value="1.0" min="0.1" max="5" step="0.1">
+                </label>
+                <label>Poll seconds
+                    <input name="poll_seconds" type="number" value="30" min="10" max="120" step="5">
+                </label>
+            </div>
+            <div class="actions">
+                <button type="submit" id="start-autopilot">Start Autopilot</button>
+                <button type="button" id="stop-autopilot" class="secondary">Stop Autopilot</button>
+            </div>
+        </form>
+        <div class="panel autopilot-panel">
+            <h3>Autopilot Telemetry</h3>
+            <div class="autopilot-grid">
+                <div class="kv"><span>Last signal</span><span id="auto-last-signal">—</span></div>
+                <div class="kv"><span>Last reason</span><span id="auto-last-reason">—</span></div>
+                <div class="kv"><span>Trend strength</span><span id="auto-trend">—</span></div>
+                <div class="kv"><span>Volatility (1m)</span><span id="auto-vol">—</span></div>
+                <div class="kv"><span>RSI</span><span id="auto-rsi">—</span></div>
+                <div class="kv"><span>Signal price</span><span id="auto-price">—</span></div>
+                <div class="kv"><span>Applied ladder</span><span id="auto-applied">—</span></div>
+                <div class="kv"><span>Last run</span><span id="auto-last-run">—</span></div>
+                <div class="kv"><span>Error</span><span id="auto-error">—</span></div>
+            </div>
+            <h4>Active config</h4>
+            <pre id="auto-config" class="mono small">{}</pre>
+        </div>
+    </section>
+
     <!-- Bot Status & Tables -->
     <section id="status-section">
         <h2>Bot Status</h2>

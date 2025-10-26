@@ -1,11 +1,13 @@
 import os
+import math
 import asyncio
 import logging
-from fastapi import FastAPI, HTTPException, Depends
+import statistics
+from fastapi import FastAPI, HTTPException, Depends, Response
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, validator
-from typing import List, Optional
+from typing import Dict, List, Optional
 import httpx
 from datetime import datetime, timezone, date
 from dotenv import load_dotenv
@@ -69,6 +71,35 @@ class LadderConfig(BaseModel):
         if v.upper() not in {"BUY", "SELL"}:
             raise ValueError("direction must be BUY or SELL")
         return v.upper()
+
+class AutopilotConfig(BaseModel):
+    symbol: str = Field(..., description="Trading symbol, e.g. BTC/USD")
+    fast_window: int = Field(12, ge=3, le=60)
+    slow_window: int = Field(26, ge=5, le=240)
+    rsi_window: int = Field(14, ge=5, le=240)
+    overbought: float = Field(70.0, gt=50.0, lt=100.0)
+    oversold: float = Field(30.0, gt=0.0, lt=50.0)
+    base_interval: float = Field(150.0, gt=0.0)
+    base_steps: int = Field(7, ge=3, le=20)
+    rung_notional: float = Field(..., gt=0.0, description="USD per rung before adjustments")
+    max_notional: float = Field(..., gt=0.0, description="Maximum USD the ladder may deploy")
+    volatility_lookback: int = Field(60, ge=10, le=500)
+    risk_multiplier: float = Field(1.0, gt=0.1, le=5.0)
+    poll_seconds: float = Field(30.0, ge=10.0, le=120.0)
+
+    @validator("slow_window")
+    def slow_greater_than_fast(cls, v, values):
+        fast = values.get("fast_window")
+        if fast and v <= fast:
+            raise ValueError("slow_window must be greater than fast_window")
+        return v
+
+    @validator("overbought")
+    def overbought_above_oversold(cls, v, values):
+        oversold = values.get("oversold")
+        if oversold and v <= oversold:
+            raise ValueError("overbought must exceed oversold")
+        return v
 
 class NudgeRequest(BaseModel):
     direction: str
@@ -157,15 +188,43 @@ class BotManager:
 
 bot_manager = BotManager()
 
-# -------------------------------------------------
-# Alpaca helper functions
-# -------------------------------------------------
-async def get_latest_price(client: httpx.AsyncClient, symbol: str) -> float:
+
+def normalize_symbol(symbol: str) -> str:
+    normalized = symbol.replace("-", "/").upper()
+    if "/" not in normalized and len(normalized) > 3:
+        normalized = f"{normalized[:-3]}/{normalized[-3:]}"
+    return normalized
+
+
+def _pick_series(symbol: str, container) -> List[dict]:
+    if isinstance(container, dict):
+        normalized = normalize_symbol(symbol)
+        candidates = [
+            normalized,
+            symbol,
+            symbol.replace("-", "/"),
+            normalized.replace("/", ""),
+            normalized.replace("/", "-"),
+        ]
+        for key in candidates:
+            if key in container:
+                return container[key]
+        return next(iter(container.values()), [])
+    return container
+
+
+async def fetch_crypto_bars(
+    client: httpx.AsyncClient,
+    symbol: str,
+    *,
+    limit: int,
+    timeframe: str = "1Min",
+) -> List[Dict[str, float]]:
     endpoint = f"{ALPACA_DATA_URL}/v1beta3/crypto/us/bars"
     params = {
-        "symbols": symbol,
-        "timeframe": "1Min",
-        "limit": 1,
+        "symbols": normalize_symbol(symbol),
+        "timeframe": timeframe,
+        "limit": limit,
         "sort": "desc",
     }
     headers = {
@@ -175,60 +234,318 @@ async def get_latest_price(client: httpx.AsyncClient, symbol: str) -> float:
     resp = await client.get(endpoint, params=params, headers=headers)
     resp.raise_for_status()
     data = resp.json()
-    container = data.get("bars", [])
-    if isinstance(container, dict):
-        # Prefer exact symbol key; otherwise take the first series
-        series = (
-            container.get(symbol)
-            or container.get(symbol.replace("-", "/"))
-            or next(iter(container.values()), [])
-        )
-    else:
-        series = container
+    series = _pick_series(symbol, data.get("bars", []))
     if not series:
         raise RuntimeError(f"No bar data for {symbol}")
-    last = series[0]
-    price_value = last.get("c") if isinstance(last, dict) else None
-    if price_value is None:
-        price_value = last.get("close") if isinstance(last, dict) else None
-    if price_value is None:
-        raise RuntimeError("Bar format unexpected; missing close price")
-    return float(price_value)
+    bars: List[Dict[str, float]] = []
+    for raw in reversed(series):  # chronological order (oldest → newest)
+        bars.append(
+            {
+                "t": raw.get("t") or raw.get("timestamp"),
+                "o": float(raw.get("o", raw.get("open"))),
+                "h": float(raw.get("h", raw.get("high", raw.get("c", 0)))),
+                "l": float(raw.get("l", raw.get("low", raw.get("c", 0)))),
+                "c": float(raw.get("c", raw.get("close"))),
+            }
+        )
+    return bars[-limit:]
+
+
+def compute_ema(values: List[float], window: int) -> float:
+    if not values:
+        return 0.0
+    k = 2 / (window + 1)
+    ema_value = values[0]
+    for price in values[1:]:
+        ema_value = price * k + ema_value * (1 - k)
+    return ema_value
+
+
+def compute_rsi(values: List[float], window: int) -> float:
+    if len(values) <= window:
+        return 50.0
+    gains = []
+    losses = []
+    for i in range(1, len(values)):
+        change = values[i] - values[i - 1]
+        if change > 0:
+            gains.append(change)
+            losses.append(0.0)
+        else:
+            gains.append(0.0)
+            losses.append(abs(change))
+    avg_gain = sum(gains[-window:]) / window
+    avg_loss = sum(losses[-window:]) / window
+    if avg_loss == 0:
+        return 100.0
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
+
+def compute_pct_volatility(values: List[float]) -> float:
+    if len(values) < 2:
+        return 0.0
+    returns = []
+    for prev, curr in zip(values[:-1], values[1:]):
+        if prev == 0:
+            continue
+        returns.append((curr - prev) / prev)
+    if not returns:
+        return 0.0
+    return statistics.pstdev(returns)
+
+
+def ladder_configs_close(a: LadderConfig, b: LadderConfig) -> bool:
+    return (
+        a.symbol == b.symbol
+        and a.direction == b.direction
+        and math.isclose(a.interval, b.interval, rel_tol=0.05, abs_tol=0.5)
+        and math.isclose(a.size, b.size, rel_tol=0.05, abs_tol=1e-6)
+        and a.steps == b.steps
+        and math.isclose(a.max_exposure, b.max_exposure, rel_tol=0.05, abs_tol=1e-6)
+    )
+
+
+async def get_latest_price(client: httpx.AsyncClient, symbol: str) -> float:
+    bars = await fetch_crypto_bars(client, symbol, limit=1)
+    if not bars:
+        raise RuntimeError(f"No bar data for {symbol}")
+    return float(bars[-1]["c"])
+
 
 async def get_latest_bar(client: httpx.AsyncClient, symbol: str) -> dict:
-    endpoint = f"{ALPACA_DATA_URL}/v1beta3/crypto/us/bars"
-    params = {
-        "symbols": symbol,
-        "timeframe": "1Min",
-        "limit": 1,
-        "sort": "desc",
-    }
-    headers = {
-        "APCA-API-KEY-ID": ALPACA_API_KEY,
-        "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
-    }
-    resp = await client.get(endpoint, params=params, headers=headers)
-    resp.raise_for_status()
-    data = resp.json()
-    container = data.get("bars", [])
-    if isinstance(container, dict):
-        series = (
-            container.get(symbol)
-            or container.get(symbol.replace("-", "/"))
-            or container.get(symbol.replace("/", ""))
-            or next(iter(container.values()), [])
-        )
-    else:
-        series = container
-    if not series:
+    bars = await fetch_crypto_bars(client, symbol, limit=1)
+    if not bars:
         raise RuntimeError(f"No bar data for {symbol}")
-    bar = series[0]
-    # Ensure keys exist; map alternative keys if present
-    return {
-        "c": float(bar.get("c", bar.get("close"))),
-        "h": float(bar.get("h", bar.get("high", bar.get("c", 0)))),
-        "l": float(bar.get("l", bar.get("low", bar.get("c", 0)))),
-    }
+    return bars[-1]
+
+
+class AutopilotManager:
+    def __init__(self):
+        self.task: Optional[asyncio.Task] = None
+        self.cfg: Optional[AutopilotConfig] = None
+        self.last_signal: Optional[str] = None
+        self.last_decision: Dict[str, float] = {}
+        self.last_error: Optional[str] = None
+        self.last_reason: Optional[str] = None
+        self.last_run: Optional[datetime] = None
+        self.applied_config: Optional[LadderConfig] = None
+        self._lock = asyncio.Lock()
+
+    async def start(self, cfg: AutopilotConfig):
+        async with self._lock:
+            if self.task and not self.task.done():
+                raise RuntimeError("Autopilot already running")
+            await bot_manager.stop()
+            self.cfg = cfg
+            self.last_signal = None
+            self.last_decision = {}
+            self.last_error = None
+            self.last_reason = None
+            self.last_run = None
+            self.applied_config = None
+            self.task = asyncio.create_task(self._run())
+        log.info("Autopilot started with %s", cfg.dict())
+
+    async def stop(self):
+        async with self._lock:
+            if self.task:
+                self.task.cancel()
+                try:
+                    await self.task
+                except asyncio.CancelledError:
+                    pass
+            self.task = None
+            self.last_signal = "stopped"
+            self.applied_config = None
+        await bot_manager.stop()
+        log.info("Autopilot stopped")
+
+    async def _run(self):
+        assert self.cfg is not None
+        cfg = self.cfg
+        lookback = max(cfg.slow_window, cfg.rsi_window, cfg.volatility_lookback) + 5
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            while True:
+                try:
+                    history = await fetch_crypto_bars(client, cfg.symbol, limit=lookback)
+                    closes = [bar["c"] for bar in history]
+                    if len(closes) < lookback:
+                        raise RuntimeError(
+                            "Insufficient history returned from Alpaca for strategy computation"
+                        )
+                    fast = compute_ema(closes[-cfg.fast_window - 1 :], cfg.fast_window)
+                    slow = compute_ema(closes[-cfg.slow_window - 1 :], cfg.slow_window)
+                    rsi = compute_rsi(closes, cfg.rsi_window)
+                    trend_strength = (fast - slow) / slow if slow else 0.0
+                    volatility = compute_pct_volatility(
+                        closes[-(cfg.volatility_lookback + 1) :]
+                    )
+                    direction, reason = self._determine_direction(fast, slow, rsi, cfg)
+                    await self._apply_decision(
+                        direction=direction,
+                        price=closes[-1],
+                        volatility=volatility,
+                        trend_strength=trend_strength,
+                        rsi=rsi,
+                        fast=fast,
+                        slow=slow,
+                        reason=reason,
+                    )
+                    async with self._lock:
+                        self.last_signal = direction or "HOLD"
+                        self.last_reason = reason
+                        self.last_run = datetime.now(timezone.utc)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    log.exception("Autopilot error")
+                    async with self._lock:
+                        self.last_error = str(exc)
+                await asyncio.sleep(cfg.poll_seconds)
+
+    def _determine_direction(
+        self,
+        fast: float,
+        slow: float,
+        rsi: float,
+        cfg: AutopilotConfig,
+    ) -> (Optional[str], str):
+        if slow == 0:
+            return None, "Slow EMA is zero; skipping signal"
+        if fast > slow * 1.001 and rsi < cfg.overbought:
+            return "BUY", f"Trend up (fast {fast:.2f} > slow {slow:.2f}), RSI {rsi:.1f}"
+        if fast < slow * 0.999 and rsi > cfg.oversold:
+            return "SELL", f"Trend down (fast {fast:.2f} < slow {slow:.2f}), RSI {rsi:.1f}"
+        return None, f"Neutral: fast {fast:.2f} vs slow {slow:.2f}, RSI {rsi:.1f}"
+
+    async def _apply_decision(
+        self,
+        *,
+        direction: Optional[str],
+        price: float,
+        volatility: float,
+        trend_strength: float,
+        rsi: float,
+        fast: float,
+        slow: float,
+        reason: str,
+    ):
+        cfg = self.cfg
+        if cfg is None:
+            return
+        volatility_pct = volatility * 100.0
+        trend_pct = trend_strength * 100.0
+        snapshot = {
+            "volatility_pct": volatility_pct,
+            "trend_pct": trend_pct,
+            "rsi": rsi,
+            "price": price,
+            "fast": fast,
+            "slow": slow,
+            "direction": direction,
+            "reason": reason,
+        }
+        async with self._lock:
+            self.last_decision = snapshot
+
+        if not direction:
+            await bot_manager.stop()
+            async with bot_manager._lock:
+                bot_manager.last_action = "Autopilot on standby – waiting for directional edge"
+                bot_manager.manual_price = None
+            async with self._lock:
+                self.applied_config = None
+            return
+
+        interval_mult = 1.0
+        steps_adj = 0
+        size_mult = 1.0
+        if volatility_pct >= 1.2:
+            interval_mult = 1.8
+            steps_adj = -2
+            size_mult = 0.7
+        elif volatility_pct >= 0.7:
+            interval_mult = 1.3
+            steps_adj = -1
+            size_mult = 0.85
+        elif volatility_pct <= 0.25:
+            interval_mult = 0.75
+            steps_adj = 1
+            size_mult = 1.1
+
+        if direction == "BUY" and trend_strength > 0:
+            size_mult *= 1.1
+        elif direction == "SELL" and trend_strength < 0:
+            size_mult *= 1.1
+
+        interval = max(0.01, cfg.base_interval * interval_mult * cfg.risk_multiplier)
+        steps = max(3, min(20, cfg.base_steps + steps_adj))
+        size_notional = cfg.rung_notional * size_mult * cfg.risk_multiplier
+        max_notional = cfg.max_notional * cfg.risk_multiplier
+        if size_notional * steps > max_notional:
+            size_notional = max_notional / max(steps, 1)
+
+        size_asset = round(size_notional / price, 8)
+        max_exposure_asset = round(max_notional / price, 8)
+        interval = round(interval, 2)
+
+        if size_asset <= 0 or max_exposure_asset <= 0:
+            raise RuntimeError("Computed ladder sizes are non-positive; adjust autopilot inputs")
+
+        new_cfg = LadderConfig(
+            symbol=cfg.symbol,
+            direction=direction,
+            steps=steps,
+            interval=interval,
+            size=size_asset,
+            max_exposure=max_exposure_asset,
+        )
+
+        meta = {
+            "reason": reason,
+            "volatility_pct": volatility_pct,
+            "trend_pct": trend_pct,
+            "size_notional": size_notional,
+            "max_notional": max_notional,
+        }
+        await self._ensure_ladder(new_cfg, meta)
+
+    async def _ensure_ladder(self, cfg: LadderConfig, meta: Dict[str, float]):
+        running = bot_manager.task is not None and not bot_manager.task.done()
+        current = bot_manager.cfg
+        if running and current and ladder_configs_close(current, cfg):
+            async with bot_manager._lock:
+                bot_manager.last_action = (
+                    f"Autopilot maintaining {cfg.direction} ladder – vol {meta['volatility_pct']:.2f}%"
+                )
+            async with self._lock:
+                self.applied_config = cfg
+            return
+
+        if running:
+            await bot_manager.stop()
+        await bot_manager.start(cfg)
+        async with bot_manager._lock:
+            bot_manager.last_action = (
+                f"Autopilot set {cfg.direction} ladder: {meta['reason']} | interval ${cfg.interval}"
+            )
+        async with self._lock:
+            self.applied_config = cfg
+
+    def snapshot(self) -> Dict[str, Optional[object]]:
+        return {
+            "running": self.task is not None and not self.task.done(),
+            "config": self.cfg.dict() if self.cfg else None,
+            "last_signal": self.last_signal,
+            "last_reason": self.last_reason,
+            "last_decision": self.last_decision,
+            "last_error": self.last_error,
+            "last_run": self.last_run.isoformat() if self.last_run else None,
+            "applied_ladder": self.applied_config.dict() if self.applied_config else None,
+        }
+
+autopilot_manager = AutopilotManager()
 
 def compute_step_prices(cfg: LadderConfig, price: float) -> List[float]:
     sign = -1 if cfg.direction == "BUY" else 1
@@ -417,6 +734,12 @@ async def update_fills_and_position(client: httpx.AsyncClient,
 async def index():
     return FileResponse("static/index.html")
 
+
+@app.get("/favicon.ico")
+async def favicon():
+    # Browsers request a favicon automatically; return an empty 204 instead of a 404
+    return Response(status_code=204)
+
 @app.get("/api/bars")
 async def get_bars(params: BarParams = Depends()):
     endpoint = f"{ALPACA_DATA_URL}/v1beta3/crypto/us/bars"
@@ -425,9 +748,7 @@ async def get_bars(params: BarParams = Depends()):
         "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
     }
     # Normalize symbol to Alpaca format: BTCUSD -> BTC/USD
-    normalized = params.symbols.replace("-", "/")
-    if "/" not in normalized and len(normalized) > 3:
-        normalized = f"{normalized[:-3]}/{normalized[-3:]}"
+    normalized = normalize_symbol(params.symbols)
     query = params.dict(exclude_none=True)
     query["symbols"] = normalized
     async with httpx.AsyncClient() as client:
@@ -449,6 +770,26 @@ async def start_ladder(cfg: LadderConfig):
 async def stop_ladder():
     await bot_manager.stop()
     return {"status": "stopped"}
+
+
+@app.post("/api/start-autopilot")
+async def start_autopilot(cfg: AutopilotConfig):
+    try:
+        await autopilot_manager.start(cfg)
+        return {"status": "started", "config": cfg.dict()}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/stop-autopilot")
+async def stop_autopilot():
+    await autopilot_manager.stop()
+    return {"status": "stopped"}
+
+
+@app.get("/api/autopilot-status")
+async def get_autopilot_status():
+    return autopilot_manager.snapshot()
 
 @app.get("/api/status")
 async def get_status():
@@ -508,6 +849,7 @@ async def get_status():
         "ladder_notional_max": ladder_notional_max,
         "capacity_remaining": capacity_remaining,
         "open_order_count": len(bot_manager.open_orders),
+        "autopilot": autopilot_manager.snapshot(),
     }
 
 @app.post("/api/nudge")
