@@ -688,21 +688,6 @@ async def cancel_order(client: httpx.AsyncClient, order_id: str):
     # Alpaca returns 204 No Content on successful cancel
     if resp.status_code == 204 or not resp.content:
         return {"status": "cancelled"}
-    if resp.status_code in (404, 422):
-        # Crypto orders can flip to filled/cancelled between list & cancel calls.
-        log.info(
-            "Order %s already inactive when cancelling (status %s)",
-            order_id,
-            resp.status_code,
-        )
-        return {"status": "missing"}
-    if 400 <= resp.status_code < 500:
-        log.warning(
-            "Unexpected client error while cancelling %s: %s %s",
-            order_id,
-            resp.status_code,
-            resp.text,
-        )
     resp.raise_for_status()
     return resp.json()
 
