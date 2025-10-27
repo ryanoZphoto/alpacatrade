@@ -15,6 +15,15 @@ if (window.Chart) {
     if (Chart.OhlcElement) Chart.register(Chart.OhlcElement);
 }
 
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 // Tabs (Overview | Manual | Autopilot | Market)
 document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -354,6 +363,39 @@ function renderActivity(logLines) {
     `).join('');
 }
 
+function renderAutopilotHistory(auto) {
+    const body = document.getElementById('auto-history-body');
+    if (!body) return;
+    const rows = (auto?.history || []).slice().reverse();
+    if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="7">Waiting for the next autopilot run…</td></tr>';
+        return;
+    }
+    const fmtPct = v => (v == null ? '—' : `${Number(v).toFixed(2)}%`);
+    const fmtRsi = v => (v == null ? '—' : Number(v).toFixed(2));
+    const fmtPrice = v => (v == null ? '—' : `$${Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })}`);
+    body.innerHTML = rows.map(entry => {
+        const time = entry.ts ? new Date(entry.ts).toLocaleTimeString() : '—';
+        const action = escapeHtml(entry.action || '—');
+        const note = escapeHtml(entry.note || '—');
+        const trend = fmtPct(entry.trend_pct);
+        const vol = fmtPct(entry.volatility_pct);
+        const rsi = fmtRsi(entry.rsi);
+        const price = fmtPrice(entry.price);
+        return `
+            <tr>
+                <td>${escapeHtml(time)}</td>
+                <td>${action}</td>
+                <td>${note}</td>
+                <td>${escapeHtml(trend)}</td>
+                <td>${escapeHtml(vol)}</td>
+                <td>${escapeHtml(rsi)}</td>
+                <td>${escapeHtml(price)}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
 function updateAutopilotPanel(auto) {
     const stateBadge = document.getElementById('auto-state');
     if (!stateBadge) return;
@@ -368,8 +410,38 @@ function updateAutopilotPanel(auto) {
         const el = document.getElementById(id);
         if (el) el.textContent = val;
     };
-    set('auto-last-signal', auto?.last_signal || '—');
-    set('auto-last-reason', auto?.last_reason || '—');
+    let signalLabel = 'Idle';
+    if (running) {
+        if (auto?.last_signal && auto.last_signal !== 'stopped') {
+            signalLabel = auto.last_signal.toUpperCase();
+        } else {
+            signalLabel = 'Watching';
+        }
+    }
+    set('auto-last-signal', signalLabel);
+    const note = running
+        ? (auto?.last_reason || 'Waiting for EMA / RSI alignment')
+        : '—';
+    set('auto-last-reason', note);
+    const pollSeconds = auto?.config?.poll_seconds;
+    if (running && pollSeconds) {
+        const cadence = `${pollSeconds}s cadence`;
+        if (auto?.last_run) {
+            const last = new Date(auto.last_run);
+            if (!Number.isNaN(last.getTime())) {
+                const next = new Date(last.getTime() + pollSeconds * 1000);
+                set('auto-next-poll', `${cadence} · next ~${next.toLocaleTimeString()}`);
+            } else {
+                set('auto-next-poll', cadence);
+            }
+        } else {
+            set('auto-next-poll', cadence);
+        }
+    } else if (pollSeconds) {
+        set('auto-next-poll', `${pollSeconds}s cadence (configured)`);
+    } else {
+        set('auto-next-poll', '—');
+    }
     const decision = auto?.last_decision || {};
     set('auto-trend', decision.trend_pct != null ? `${decision.trend_pct.toFixed(2)}%` : '—');
     set('auto-vol', decision.volatility_pct != null ? `${decision.volatility_pct.toFixed(2)}%` : '—');
@@ -393,6 +465,7 @@ function updateAutopilotPanel(auto) {
     if (cfgEl) {
         cfgEl.textContent = auto?.config ? JSON.stringify(auto.config, null, 2) : '{}';
     }
+    renderAutopilotHistory(auto);
 }
 
 let lastPriceCache = 0;

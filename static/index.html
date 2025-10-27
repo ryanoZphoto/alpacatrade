@@ -213,7 +213,7 @@
         <section id="manual-tab" class="tab-content hidden">
             <header class="tab-header">
                 <h2>Manual ladder console</h2>
-                <p>Stage a static ladder, choose your risk limits, and manage orders directly. The autopilot tab can reuse these settings or override them on the fly.</p>
+                <p>Stage a static ladder, choose your risk limits, and manage orders directly. Use this workspace when you want full manual control—the autopilot tab builds its own blueprint when it takes over.</p>
             </header>
 
             <div class="panel process-guide">
@@ -319,12 +319,35 @@
             </header>
 
             <div class="panel process-guide">
-                <h3>How it runs</h3>
+                <h3>Quickstart workflow</h3>
                 <ol class="process-steps">
-                    <li><strong>Signal detection</strong> — EMA crossover strength must agree with RSI before a ladder is armed.</li>
-                    <li><strong>Ladder blueprint</strong> — Base interval/steps and the risk multiplier decide spacing and depth.</li>
-                    <li><strong>Risk & cadence</strong> — Volatility guard rails and poll cadence control how aggressively it reacts.</li>
+                    <li><strong>Confirm the basics.</strong> Check the Overview tab for a green account snapshot and flatten any manual ladder before handing off.</li>
+                    <li><strong>Define signal detection.</strong> Tune the EMA/RSI windows and thresholds below for how quickly you want the autopilot to react.</li>
+                    <li><strong>Set the ladder blueprint.</strong> Choose spacing, step count, and USD limits that match your risk tolerance.</li>
+                    <li><strong>Review risk cadence.</strong> Volatility lookback, risk multiplier, and poll cadence govern how aggressively it adapts.</li>
+                    <li><strong>Press <em>Start Autopilot</em>.</strong> Watch the Decision timeline and capital chart to see each action; use <em>Stop Autopilot</em> or <em>Close All</em> for an immediate exit.</li>
                 </ol>
+            </div>
+
+            <div class="panel autopilot-status">
+                <div class="status-grid">
+                    <div class="status-card">
+                        <div class="label">Current signal</div>
+                        <div class="value" id="auto-last-signal">—</div>
+                    </div>
+                    <div class="status-card">
+                        <div class="label">Decision note</div>
+                        <div class="value" id="auto-last-reason">—</div>
+                    </div>
+                    <div class="status-card">
+                        <div class="label">Next evaluation</div>
+                        <div class="value" id="auto-next-poll">—</div>
+                    </div>
+                    <div class="status-card">
+                        <div class="label">Active ladder</div>
+                        <div class="value" id="auto-applied">—</div>
+                    </div>
+                </div>
             </div>
 
             <div class="autopilot-columns">
@@ -420,18 +443,37 @@
                     <div class="panel autopilot-panel">
                         <h3>Autopilot telemetry</h3>
                         <div class="autopilot-grid">
-                            <div class="kv"><span>Last signal</span><span id="auto-last-signal">—</span></div>
-                            <div class="kv"><span>Last reason</span><span id="auto-last-reason">—</span></div>
                             <div class="kv"><span>Trend strength</span><span id="auto-trend">—</span></div>
                             <div class="kv"><span>Volatility (1m)</span><span id="auto-vol">—</span></div>
                             <div class="kv"><span>RSI</span><span id="auto-rsi">—</span></div>
                             <div class="kv"><span>Signal price</span><span id="auto-price">—</span></div>
-                            <div class="kv"><span>Applied ladder</span><span id="auto-applied">—</span></div>
                             <div class="kv"><span>Last run</span><span id="auto-last-run">—</span></div>
                             <div class="kv"><span>Error</span><span id="auto-error">—</span></div>
                         </div>
                         <h4>Active config</h4>
                         <pre id="auto-config" class="mono small">{}</pre>
+                    </div>
+                    <div class="panel autopilot-history">
+                        <h3>Decision timeline</h3>
+                        <p class="small">A new row appears whenever the autopilot starts, deploys, maintains, or pauses a ladder.</p>
+                        <div class="table-scroll">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Action</th>
+                                        <th>Note</th>
+                                        <th>Trend %</th>
+                                        <th>Vol %</th>
+                                        <th>RSI</th>
+                                        <th>Price</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="auto-history-body">
+                                    <tr><td colspan="7">Waiting for the next autopilot run…</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                     <figure class="panel autopilot-usage">
                         <h3>Capital vs. P/L while Autopilot runs</h3>
@@ -481,144 +523,6 @@
             </div>
         </section>
     </main>
-
-    <!-- Autopilot Tab -->
-    <section id="autopilot-tab" class="tab-content hidden">
-        <section id="autopilot-section">
-            <h2>Strategy Autopilot <span id="auto-state" class="badge badge-off">Idle</span></h2>
-            <div class="help autopilot-intro">The autopilot monitors the last 65 minutes of price action, compares fast and slow EMAs, checks RSI, and then either realigns the ladder or pauses it when conditions are unfavorable. All USD inputs are converted to the symbol you select using the latest price from Alpaca’s paper data feed.</div>
-            <div class="autopilot-columns">
-                <div class="auto-col">
-                    <form id="autopilot-form" class="autopilot-form">
-                        <div class="auto-grid">
-                            <label>Symbol
-                                <input name="symbol" value="BTC/USD" required>
-                                <span class="field-help">Trading pair to monitor and trade.</span>
-                            </label>
-                            <label>Fast EMA window
-                                <input name="fast_window" type="number" value="12" min="3" max="60">
-                                <span class="field-help">Short trend lookback (bars) for momentum swings.</span>
-                            </label>
-                            <label>Slow EMA window
-                                <input name="slow_window" type="number" value="26" min="5" max="240">
-                                <span class="field-help">Longer trend lookback that the fast EMA is compared against.</span>
-                            </label>
-                            <label>RSI window
-                                <input name="rsi_window" type="number" value="14" min="5" max="240">
-                                <span class="field-help">Number of bars used for RSI; helps judge overbought/oversold.</span>
-                            </label>
-                            <label>RSI overbought
-                                <input name="overbought" type="number" value="70" min="50" max="95" step="0.1">
-                                <span class="field-help">Above this RSI, autopilot assumes upside momentum is stretched.</span>
-                            </label>
-                            <label>RSI oversold
-                                <input name="oversold" type="number" value="30" min="5" max="50" step="0.1">
-                                <span class="field-help">Below this RSI, downside momentum may be exhausted.</span>
-                            </label>
-                            <label>Base interval (USD)
-                                <input name="base_interval" type="number" value="150" step="0.01">
-                                <span class="field-help">Starting distance between ladder rungs before adjustments.</span>
-                            </label>
-                            <label>Base steps
-                                <input name="base_steps" type="number" value="7" min="3" max="20">
-                                <span class="field-help">Default number of rungs the ladder should have.</span>
-                            </label>
-                            <label>Per-rung notional (USD)
-                                <input name="rung_notional" type="number" value="1000" step="0.01">
-                                <span class="field-help">Dollar amount per rung, converted to the asset at runtime.</span>
-                            </label>
-                            <label>Max deployment (USD)
-                                <input name="max_notional" type="number" value="7000" step="0.01">
-                                <span class="field-help">Hard cap of USD exposure the autopilot is allowed to deploy.</span>
-                            </label>
-                            <label>Volatility lookback (bars)
-                                <input name="volatility_lookback" type="number" value="60" min="10" max="500">
-                                <span class="field-help">How many bars to use when measuring 1m volatility spikes.</span>
-                            </label>
-                            <label>Risk multiplier
-                                <input name="risk_multiplier" type="number" value="1.0" min="0.1" max="5" step="0.1">
-                                <span class="field-help">Scale ladder spacing/size up (>1) or down (&lt;1) from the base.</span>
-                            </label>
-                            <label>Poll seconds
-                                <input name="poll_seconds" type="number" value="30" min="10" max="120" step="5">
-                                <span class="field-help">How often the controller evaluates signals and updates.</span>
-                            </label>
-                        </div>
-                        <div class="actions">
-                            <button type="submit" id="start-autopilot">Start Autopilot</button>
-                            <button type="button" id="stop-autopilot" class="secondary">Stop Autopilot</button>
-                        </div>
-                    </form>
-                    <div class="panel autopilot-actions">
-                        <h3>Button cheat sheet</h3>
-                        <ul class="small">
-                            <li><b>Start Autopilot</b> kicks off the EMA/RSI controller and lets it take over ladder sizing.</li>
-                            <li><b>Stop Autopilot</b> immediately halts the controller; ladder settings stay wherever they last landed.</li>
-                        </ul>
-                        <p class="small">Keep the ladder running if you want fills during autopilot pauses—the controller only changes configuration and cancels orders when conditions fail your thresholds.</p>
-                    </div>
-                </div>
-                <div class="auto-col">
-                    <div class="panel autopilot-panel">
-                        <h3>Autopilot Telemetry</h3>
-                        <div class="autopilot-grid">
-                            <div class="kv"><span>Last signal</span><span id="auto-last-signal">—</span></div>
-                            <div class="kv"><span>Last reason</span><span id="auto-last-reason">—</span></div>
-                            <div class="kv"><span>Trend strength</span><span id="auto-trend">—</span></div>
-                            <div class="kv"><span>Volatility (1m)</span><span id="auto-vol">—</span></div>
-                            <div class="kv"><span>RSI</span><span id="auto-rsi">—</span></div>
-                            <div class="kv"><span>Signal price</span><span id="auto-price">—</span></div>
-                            <div class="kv"><span>Applied ladder</span><span id="auto-applied">—</span></div>
-                            <div class="kv"><span>Last run</span><span id="auto-last-run">—</span></div>
-                            <div class="kv"><span>Error</span><span id="auto-error">—</span></div>
-                        </div>
-                        <h4>Active config</h4>
-                        <pre id="auto-config" class="mono small">{}</pre>
-                    </div>
-                    <div class="panel autopilot-usage">
-                        <h3>Capital vs. P/L while Autopilot runs</h3>
-                        <p class="small">This chart plots capital currently deployed (position × last price) against the combined realized and unrealized P/L reported by Alpaca. Data is captured every status poll, so you can confirm how hard the controller is working.</p>
-                        <canvas id="autopilot-usage-canvas" width="600" height="280"></canvas>
-                    </div>
-                </div>
-            </div>
-            <div class="panel autopilot-field-guide">
-                <h3>How the fields influence the controller</h3>
-                <dl>
-                    <dt>EMA windows</dt>
-                    <dd>The controller looks for the fast EMA to cross or diverge from the slow EMA; bigger windows make the strategy slower to react.</dd>
-                    <dt>RSI thresholds</dt>
-                    <dd>RSI outside the overbought/oversold band tells the autopilot to favor reversions; inside the band it tends to pause.</dd>
-                    <dt>Base interval &amp; steps</dt>
-                    <dd>Serve as the starting ladder blueprint. Volatility and risk multiplier stretch or compress them in real time.</dd>
-                    <dt>Volatility lookback</dt>
-                    <dd>Spikes beyond recent volatility shrink position sizing or halt the ladder until conditions calm down.</dd>
-                    <dt>Risk multiplier &amp; max deployment</dt>
-                    <dd>Place an upper bound on exposure. Use a multiplier below 1 if you want a gentler ladder during choppy sessions.</dd>
-                    <dt>Poll cadence</dt>
-                    <dd>Lower values mean quicker reactions but more API calls. Higher values smooth out noise.</dd>
-                </dl>
-            </div>
-        </section>
-    </section>
-
-    <!-- Chart Tab (optional) -->
-    <section id="chart-tab" class="tab-content hidden">
-        <h2>Historical Candles</h2>
-        <div>
-            Symbol:
-            <input id="chart-symbol" type="text" value="BTC/USD" size="8">
-            Timeframe:
-            <select id="chart-timeframe">
-                <option value="5Min" selected>5Min</option>
-                <option value="15Min">15Min</option>
-                <option value="1Hour">1Hour</option>
-                <option value="1Day">1Day</option>
-            </select>
-            <button id="load-chart">Load Chart</button>
-        </div>
-        <canvas id="candles-canvas" width="900" height="400"></canvas>
-    </section>
 
     <script src="/static/script.js"></script>
 </body>

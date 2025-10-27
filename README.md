@@ -15,10 +15,15 @@ This project scaffolds a small FastAPI app that:
 3. Copy `.env.example` to `.env` and fill credentials
 4. Start server: `uvicorn main:app --reload --port 8000`
 
+### Quick test
+
+- Run `python -m compileall main.py` to ensure the FastAPI app compiles before you push changes.
+
 ## UI map
 
 - **Overview** – landing dashboard with the latest fills, account metrics, ladder status, and a “Run order” card that reminds you of the recommended workflow (prep ladder → choose manual or autopilot → monitor).
 - **Manual Ladder** – presets, rung spacing controls, circuit breaker switches, and preview cards for what will be deployed when you press **Start Ladder**.
+- **Autopilot** – a dedicated console for the EMA/RSI controller with grouped fieldsets, status cards, a decision timeline, telemetry readouts, and a live capital vs. P/L chart.
 - **Autopilot** – a dedicated console for the EMA/RSI controller with grouped fieldsets, button reference, telemetry readouts, and a live capital vs. P/L chart.
 - **Market Data** – ad-hoc historical candle viewer for quick context around the current BTC/USD trend.
 

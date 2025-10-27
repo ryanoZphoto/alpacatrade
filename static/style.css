@@ -352,6 +352,40 @@ button.danger {
 .legend ul { margin: 8px 0 0; padding-left: 18px; font-size: 13px; color: #b9c7ff; }
 
 /* Autopilot */
+.autopilot-status {
+    margin-bottom: 20px;
+}
+
+.autopilot-status .status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+}
+
+.autopilot-status .status-card {
+    background: rgba(16, 24, 52, 0.9);
+    border: 1px solid rgba(86, 118, 228, 0.45);
+    border-radius: 12px;
+    padding: 12px 14px;
+    display: grid;
+    gap: 6px;
+    min-height: 72px;
+}
+
+.autopilot-status .status-card .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #9fb0f5;
+}
+
+.autopilot-status .status-card .value {
+    font-size: 16px;
+    font-weight: 600;
+    color: #f4f7ff;
+    word-break: break-word;
+}
+
 .autopilot-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
 
 .autopilot-form fieldset {
@@ -396,6 +430,53 @@ button.danger {
     padding: 8px 10px;
     border-radius: 10px;
     color: #e7ecff;
+}
+
+.autopilot-history .table-scroll {
+    overflow-x: auto;
+}
+
+.autopilot-history table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    min-width: 540px;
+}
+
+.autopilot-history th,
+.autopilot-history td {
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(85, 114, 214, 0.25);
+    text-align: left;
+}
+
+.autopilot-history th {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #b7c4ff;
+    background: rgba(23, 32, 68, 0.65);
+}
+
+.autopilot-history tbody tr:hover {
+    background: rgba(49, 67, 140, 0.35);
+}
+
+.autopilot-history td {
+    color: #e3e9ff;
+    vertical-align: top;
+}
+
+.autopilot-history td:nth-child(3) {
+    max-width: 280px;
+    word-break: break-word;
+}
+
+.autopilot-history td:nth-child(4),
+.autopilot-history td:nth-child(5),
+.autopilot-history td:nth-child(6),
+.autopilot-history td:nth-child(7) {
+    white-space: nowrap;
 }
 
 .autopilot-usage canvas {

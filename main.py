@@ -3,11 +3,12 @@ import math
 import asyncio
 import logging
 import statistics
+from collections import deque
 from fastapi import FastAPI, HTTPException, Depends, Response
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, validator
-from typing import Dict, List, Optional
+from typing import Deque, Dict, List, Optional
 import httpx
 from datetime import datetime, timezone, date
 from dotenv import load_dotenv
@@ -331,6 +332,28 @@ class AutopilotManager:
         self.last_run: Optional[datetime] = None
         self.applied_config: Optional[LadderConfig] = None
         self._lock = asyncio.Lock()
+        self.history: Deque[Dict[str, object]] = deque(maxlen=60)
+
+    async def _record_event(self, action: str, note: str, **metrics):
+        entry: Dict[str, object] = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "action": action,
+            "note": note,
+        }
+        for key, value in metrics.items():
+            if value is None:
+                continue
+            if isinstance(value, float):
+                if key in {"interval", "price", "size_notional", "max_notional"}:
+                    entry[key] = round(value, 2)
+                elif key in {"size_asset"}:
+                    entry[key] = round(value, 6)
+                else:
+                    entry[key] = round(value, 2)
+            else:
+                entry[key] = value
+        async with self._lock:
+            self.history.append(entry)
 
     async def start(self, cfg: AutopilotConfig):
         async with self._lock:
@@ -344,7 +367,14 @@ class AutopilotManager:
             self.last_reason = None
             self.last_run = None
             self.applied_config = None
+            self.history.clear()
             self.task = asyncio.create_task(self._run())
+        await self._record_event(
+            "Started",
+            note=f"Poll every {cfg.poll_seconds:.0f}s on {cfg.symbol}",
+            symbol=cfg.symbol,
+            poll_seconds=cfg.poll_seconds,
+        )
         log.info("Autopilot started with %s", cfg.dict())
 
     async def stop(self):
@@ -359,6 +389,7 @@ class AutopilotManager:
             self.last_signal = "stopped"
             self.applied_config = None
         await bot_manager.stop()
+        await self._record_event("Stopped", note="Autopilot stopped and ladder halted")
         log.info("Autopilot stopped")
 
     async def _run(self):
@@ -455,6 +486,7 @@ class AutopilotManager:
                 bot_manager.last_action = "Autopilot on standby – waiting for directional edge"
                 bot_manager.manual_price = None
             async with self._lock:
+                already_idle = self.applied_config is None
                 self.applied_config = None
             log.info(
                 "Autopilot HOLD: %s | trend %.2f%%, vol %.2f%%, RSI %.2f, price %.2f",
@@ -464,6 +496,16 @@ class AutopilotManager:
                 rsi,
                 price,
             )
+            if not already_idle:
+                await self._record_event(
+                    "Standby",
+                    note=reason,
+                    reason=reason,
+                    trend_pct=trend_pct,
+                    volatility_pct=volatility_pct,
+                    rsi=rsi,
+                    price=price,
+                )
             return
 
         interval_mult = 1.0
@@ -517,11 +559,13 @@ class AutopilotManager:
             "size_notional": size_notional,
             "max_notional": max_notional,
         }
-        await self._ensure_ladder(new_cfg, meta)
+        await self._ensure_ladder(new_cfg, meta, price=price)
 
-    async def _ensure_ladder(self, cfg: LadderConfig, meta: Dict[str, float]):
+    async def _ensure_ladder(self, cfg: LadderConfig, meta: Dict[str, float], *, price: float):
         running = bot_manager.task is not None and not bot_manager.task.done()
         current = bot_manager.cfg
+        action_label = f"Deploy {cfg.direction}"
+        note = f"{cfg.steps} steps @ ${cfg.interval:.2f} (size {cfg.size:.6f})"
         if running and current and ladder_configs_close(current, cfg):
             async with bot_manager._lock:
                 bot_manager.last_action = (
@@ -534,6 +578,25 @@ class AutopilotManager:
                 cfg.direction,
                 cfg.symbol,
                 meta["reason"],
+            )
+            action_label = f"Maintain {cfg.direction}"
+            async with self._lock:
+                last_action = self.history[-1]["action"] if self.history else None
+            if last_action and last_action.startswith("Maintain"):
+                return
+            note = f"{cfg.steps} steps @ ${cfg.interval:.2f} (size {cfg.size:.6f})"
+            await self._record_event(
+                action_label,
+                note=note,
+                reason=meta["reason"],
+                trend_pct=meta["trend_pct"],
+                volatility_pct=meta["volatility_pct"],
+                interval=cfg.interval,
+                steps=cfg.steps,
+                size_asset=cfg.size,
+                size_notional=meta["size_notional"],
+                max_notional=meta["max_notional"],
+                price=price,
             )
             return
 
@@ -556,6 +619,19 @@ class AutopilotManager:
             meta["max_notional"],
             meta["reason"],
         )
+        await self._record_event(
+            action_label,
+            note=note,
+            reason=meta["reason"],
+            trend_pct=meta["trend_pct"],
+            volatility_pct=meta["volatility_pct"],
+            interval=cfg.interval,
+            steps=cfg.steps,
+            size_asset=cfg.size,
+            size_notional=meta["size_notional"],
+            max_notional=meta["max_notional"],
+            price=price,
+        )
 
     def snapshot(self) -> Dict[str, Optional[object]]:
         return {
@@ -567,6 +643,7 @@ class AutopilotManager:
             "last_error": self.last_error,
             "last_run": self.last_run.isoformat() if self.last_run else None,
             "applied_ladder": self.applied_config.dict() if self.applied_config else None,
+            "history": list(self.history),
         }
 
 autopilot_manager = AutopilotManager()
