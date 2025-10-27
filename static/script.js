@@ -49,7 +49,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
 const autopilotHistory = [];
 let autopilotChart = null;
-let autopilotActionInFlight = false;
 
 function ensureAutopilotChart() {
     if (autopilotChart) return autopilotChart;
@@ -241,7 +240,6 @@ const autopilotForm = document.getElementById('autopilot-form');
 if (autopilotForm) {
     autopilotForm.addEventListener('submit', async e => {
         e.preventDefault();
-        if (autopilotActionInFlight) return;
         const fd = new FormData(autopilotForm);
         const payload = {
             symbol: String(fd.get('symbol') || '').trim(),
@@ -258,74 +256,22 @@ if (autopilotForm) {
             risk_multiplier: Number(fd.get('risk_multiplier')),
             poll_seconds: Number(fd.get('poll_seconds')),
         };
-        autopilotActionInFlight = true;
-        const startBtn = document.getElementById('start-autopilot');
-        const stopBtn = document.getElementById('stop-autopilot');
-        const startLabel = startBtn ? startBtn.textContent : '';
-        let snapshot = null;
-        if (startBtn) {
-            startBtn.textContent = 'Starting…';
-            startBtn.disabled = true;
-            startBtn.dataset.label = startLabel || 'Start Autopilot';
-        }
-        if (stopBtn) {
-            stopBtn.disabled = true;
-        }
         try {
-            const resp = await apiPost('start-autopilot', payload);
-            snapshot = resp?.autopilot || null;
-            if (snapshot) {
-                updateAutopilotPanel(snapshot);
-            }
+            await apiPost('start-autopilot', payload);
             await refreshStatus();
         } catch (err) {
             alert('Autopilot start error: ' + err.message);
-        } finally {
-            const runningAfter = snapshot ? !!snapshot.running : undefined;
-            if (startBtn) {
-                const label = startBtn.dataset.label || 'Start Autopilot';
-                startBtn.textContent = label;
-                startBtn.disabled = runningAfter === undefined ? false : runningAfter;
-                delete startBtn.dataset.label;
-            }
-            if (stopBtn) {
-                stopBtn.disabled = runningAfter === undefined ? true : !runningAfter;
-            }
-            autopilotActionInFlight = false;
         }
     });
 }
 const stopAutoBtn = document.getElementById('stop-autopilot');
 if (stopAutoBtn) {
     stopAutoBtn.addEventListener('click', async () => {
-        if (autopilotActionInFlight) return;
-        const startBtn = document.getElementById('start-autopilot');
-        const originalStop = stopAutoBtn.textContent;
-        autopilotActionInFlight = true;
-        stopAutoBtn.textContent = 'Stopping…';
-        stopAutoBtn.disabled = true;
-        if (startBtn) startBtn.disabled = true;
-        let snapshot = null;
         try {
-            const resp = await apiPost('stop-autopilot', {});
-            snapshot = resp?.autopilot || null;
-            if (snapshot) {
-                updateAutopilotPanel(snapshot);
-            }
+            await apiPost('stop-autopilot', {});
             await refreshStatus();
         } catch (err) {
             alert('Autopilot stop error: ' + err.message);
-        } finally {
-            const runningAfter = snapshot ? !!snapshot.running : undefined;
-            stopAutoBtn.textContent = originalStop;
-            if (runningAfter === undefined) {
-                stopAutoBtn.disabled = false;
-                if (startBtn) startBtn.disabled = false;
-            } else {
-                stopAutoBtn.disabled = !runningAfter;
-                if (startBtn) startBtn.disabled = runningAfter;
-            }
-            autopilotActionInFlight = false;
         }
     });
 }
