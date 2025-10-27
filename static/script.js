@@ -49,8 +49,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
 const autopilotHistory = [];
 let autopilotChart = null;
-let autopilotActionInFlight = null; // 'start' | 'stop' | null
-let autopilotQueuedStop = false;
 
 function ensureAutopilotChart() {
     if (autopilotChart) return autopilotChart;
@@ -238,129 +236,10 @@ if (btnCancel) btnCancel.addEventListener('click', async ()=>{
 });
 
 /* ---------- Autopilot ---------- */
-async function executeAutopilotStart(payload) {
-    if (autopilotActionInFlight === 'start' || autopilotActionInFlight === 'stop') {
-        return;
-    }
-    autopilotQueuedStop = false;
-    autopilotActionInFlight = 'start';
-    const startBtn = document.getElementById('start-autopilot');
-    const stopBtn = document.getElementById('stop-autopilot');
-    let snapshot = null;
-    if (startBtn) {
-        if (!startBtn.dataset.label) {
-            startBtn.dataset.label = startBtn.textContent || 'Start Autopilot';
-        }
-        startBtn.textContent = 'Starting…';
-        startBtn.disabled = true;
-    }
-    if (stopBtn) {
-        if (!stopBtn.dataset.label) {
-            stopBtn.dataset.label = stopBtn.textContent || 'Stop Autopilot';
-        }
-        stopBtn.disabled = true;
-    }
-    try {
-        const resp = await apiPost('start-autopilot', payload);
-        snapshot = resp?.autopilot || null;
-        if (snapshot) {
-            updateAutopilotPanel(snapshot);
-        }
-        await refreshStatus();
-    } catch (err) {
-        alert('Autopilot start error: ' + err.message);
-    } finally {
-        const runningAfter = snapshot ? !!snapshot.running : undefined;
-        if (startBtn) {
-            const label = startBtn.dataset.label || 'Start Autopilot';
-            startBtn.textContent = label;
-            startBtn.disabled = runningAfter === undefined ? false : runningAfter;
-            delete startBtn.dataset.label;
-        }
-        if (stopBtn) {
-            const label = stopBtn.dataset.label || 'Stop Autopilot';
-            stopBtn.textContent = label;
-            stopBtn.disabled = runningAfter === undefined ? true : !runningAfter;
-        }
-        autopilotActionInFlight = null;
-        if (autopilotQueuedStop && runningAfter) {
-            autopilotQueuedStop = false;
-            await executeAutopilotStop();
-        }
-    }
-}
-
-async function executeAutopilotStop() {
-    const stopBtn = document.getElementById('stop-autopilot');
-    const startBtn = document.getElementById('start-autopilot');
-    if (autopilotActionInFlight === 'stop') {
-        return;
-    }
-    if (autopilotActionInFlight === 'start') {
-        autopilotQueuedStop = true;
-        if (stopBtn) {
-            if (!stopBtn.dataset.label) {
-                stopBtn.dataset.label = stopBtn.textContent || 'Stop Autopilot';
-            }
-            stopBtn.textContent = 'Stopping when ready…';
-            stopBtn.disabled = true;
-        }
-        return;
-    }
-    autopilotActionInFlight = 'stop';
-    autopilotQueuedStop = false;
-    let snapshot = null;
-    if (stopBtn) {
-        if (!stopBtn.dataset.label) {
-            stopBtn.dataset.label = stopBtn.textContent || 'Stop Autopilot';
-        }
-        stopBtn.textContent = 'Stopping…';
-        stopBtn.disabled = true;
-    }
-    if (startBtn) {
-        if (!startBtn.dataset.label) {
-            startBtn.dataset.label = startBtn.textContent || 'Start Autopilot';
-        }
-        startBtn.disabled = true;
-    }
-    try {
-        const resp = await apiPost('stop-autopilot', {});
-        snapshot = resp?.autopilot || null;
-        if (snapshot) {
-            updateAutopilotPanel(snapshot);
-        }
-        await refreshStatus();
-    } catch (err) {
-        alert('Autopilot stop error: ' + err.message);
-    } finally {
-        const runningAfter = snapshot ? !!snapshot.running : undefined;
-        if (stopBtn) {
-            const label = stopBtn.dataset.label || 'Stop Autopilot';
-            stopBtn.textContent = label;
-            stopBtn.disabled = runningAfter === undefined ? false : runningAfter;
-            if (!runningAfter) {
-                delete stopBtn.dataset.label;
-            }
-        }
-        if (startBtn) {
-            const label = startBtn.dataset.label || 'Start Autopilot';
-            startBtn.textContent = label;
-            startBtn.disabled = runningAfter === undefined ? false : runningAfter;
-            if (!runningAfter) {
-                delete startBtn.dataset.label;
-            }
-        }
-        autopilotActionInFlight = null;
-    }
-}
-
 const autopilotForm = document.getElementById('autopilot-form');
 if (autopilotForm) {
     autopilotForm.addEventListener('submit', async e => {
         e.preventDefault();
-        if (autopilotActionInFlight === 'start' || autopilotActionInFlight === 'stop') {
-            return;
-        }
         const fd = new FormData(autopilotForm);
         const payload = {
             symbol: String(fd.get('symbol') || '').trim(),
@@ -377,13 +256,23 @@ if (autopilotForm) {
             risk_multiplier: Number(fd.get('risk_multiplier')),
             poll_seconds: Number(fd.get('poll_seconds')),
         };
-        await executeAutopilotStart(payload);
+        try {
+            await apiPost('start-autopilot', payload);
+            await refreshStatus();
+        } catch (err) {
+            alert('Autopilot start error: ' + err.message);
+        }
     });
 }
 const stopAutoBtn = document.getElementById('stop-autopilot');
 if (stopAutoBtn) {
     stopAutoBtn.addEventListener('click', async () => {
-        await executeAutopilotStop();
+        try {
+            await apiPost('stop-autopilot', {});
+            await refreshStatus();
+        } catch (err) {
+            alert('Autopilot stop error: ' + err.message);
+        }
     });
 }
 
@@ -477,7 +366,7 @@ function renderActivity(logLines) {
 function renderAutopilotHistory(auto) {
     const body = document.getElementById('auto-history-body');
     if (!body) return;
-    const rows = (auto?.history || []).slice(-60).reverse();
+    const rows = (auto?.history || []).slice().reverse();
     if (!rows.length) {
         body.innerHTML = '<tr><td colspan="7">Waiting for the next autopilot run…</td></tr>';
         return;

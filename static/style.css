@@ -432,18 +432,10 @@ button.danger {
     color: #e7ecff;
 }
 
-.autopilot-history {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    max-height: 360px;
-}
-
 .autopilot-history .table-scroll {
     overflow-x: auto;
+    max-height: 280px;
     overflow-y: auto;
-    max-height: 260px;
-    flex: 1 1 auto;
     scrollbar-width: thin;
     scrollbar-color: rgba(109, 143, 255, 0.6) transparent;
 }
