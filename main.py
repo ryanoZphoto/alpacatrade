@@ -397,6 +397,10 @@ class AutopilotManager:
                     pass
             self.task = None
             self.last_signal = "stopped"
+            self.last_decision = {}
+            self.last_reason = None
+            self.last_run = None
+            self.cfg = None
             self.applied_config = None
         await bot_manager.stop()
         await self._record_event("Stopped", note="Autopilot stopped and ladder halted")
@@ -887,7 +891,11 @@ async def stop_ladder():
 async def start_autopilot(cfg: AutopilotConfig):
     try:
         await autopilot_manager.start(cfg)
-        return {"status": "started", "config": cfg.dict()}
+        return {
+            "status": "started",
+            "config": cfg.dict(),
+            "autopilot": autopilot_manager.snapshot(),
+        }
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -895,7 +903,7 @@ async def start_autopilot(cfg: AutopilotConfig):
 @app.post("/api/stop-autopilot")
 async def stop_autopilot():
     await autopilot_manager.stop()
-    return {"status": "stopped"}
+    return {"status": "stopped", "autopilot": autopilot_manager.snapshot()}
 
 
 @app.get("/api/autopilot-status")
