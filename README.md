@@ -1,117 +1,116 @@
- (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
-diff --git a/README.md b/README.md
-index dfe0cb189429862890a5e57188aac3081dc64cad..37b74ff8d43ebda74e74224e44b84b0fa4bbfc3d 100644
---- a/README.md
-+++ b/README.md
-@@ -1,15 +1,103 @@
- # Alpaca BTC‑Ladder Prototype
- 
- This project scaffolds a small FastAPI app that:
- - pulls the latest BTC‑USD price from Alpaca’s crypto‑bars endpoint
- - builds a grid (ladder) of limit orders
- - keeps the ladder alive (cancel stray, place missing)
- - tracks fills, net position, and realized P&L
- - serves a simple web UI (chart + config + live status/logs)
-+- includes an automated “autopilot” controller that tunes the ladder using EMA + RSI signals
- 
--## How to run
-+## How to run the current version
- 
--1. Create/activate a virtual environment
--2. Install deps: `pip install -r requirements.txt`
--3. Copy `.env.example` to `.env` and fill credentials
--4. Start server: `uvicorn main:app --reload --port 8000`
-+Follow the exact steps below on Windows PowerShell (the same commands work on macOS/Linux with the usual path tweaks):
-+
-+1. **Clone or pull the repo**
-+   ```powershell
-+   git clone https://github.com/ryanoZphoto/alpacatrade.git
-+   Set-Location alpacatrade
-+   ```
-+   If you already cloned it, run `git pull` and stay inside the project folder so the new static assets are available.
-+
-+2. **Create and activate a virtual environment**
-+   ```powershell
-+   python -m venv .venv
-+   .\.venv\Scripts\Activate.ps1
-+   ```
-+
-+3. **Install Python dependencies**
-+   ```powershell
-+   pip install -r requirements.txt
-+   ```
-+
-+4. **Configure credentials**
-+   Copy the sample environment file and drop your Alpaca paper keys inside:
-+   ```powershell
-+   Copy-Item .env.example .env
-+   notepad .env
-+   ```
-+   Paste the paper account key/secret from your Alpaca dashboard, save, and close Notepad. Leave the paper URLs as-is unless you intend to hit the live environment.
-+
-+5. **Smoke-test the code**
-+   ```powershell
-+   python -m compileall main.py
-+   ```
-+   This is the repo’s quick “does it start?” check. It should finish without errors.
-+
-+6. **Run the FastAPI server**
-+   ```powershell
-+   uvicorn main:app --reload --port 8000
-+   ```
-+
-+7. **Open the UI (and force-refresh once)**
-+   Visit <http://127.0.0.1:8000/>. Because browsers cache `/static/script.js` and `/static/style.css`, press **Ctrl+F5** (or **Cmd+Shift+R** on macOS) the first time after pulling new changes to ensure you see the latest tabbed layout.
-+
-+8. **Navigate the tabs in order**
-+   *Overview* lists the recommended workflow, account state, and recent fills.
-+   Move to *Manual Ladder* if you want to configure the bot yourself, or jump straight to the dedicated *Autopilot* tab to let the EMA/RSI controller manage the ladder. The *Market Data* tab gives you historical context.
-+
-+9. **Shut down**
-+   Hit `Ctrl+C` in the terminal to stop Uvicorn when you are done.
-+
-+### Quick test (stand-alone)
-+
-+If you only need to verify the project still compiles before committing, run:
-+
-+```powershell
-+python -m compileall main.py
-+```
-+
-+## UI map
-+
-+- **Overview** – landing dashboard with the latest fills, account metrics, ladder status, and a “Run order” card that reminds you of the recommended workflow (prep ladder → choose manual or autopilot → monitor).
-+- **Manual Ladder** – presets, rung spacing controls, circuit breaker switches, and preview cards for what will be deployed when you press **Start Ladder**.
-+- **Autopilot** – a dedicated console for the EMA/RSI controller with grouped fieldsets, status cards, a decision timeline, telemetry readouts, and a live capital vs. P/L chart.
-+- **Market Data** – ad-hoc historical candle viewer for quick context around the current BTC/USD trend.
-+
-+## Autopilot strategy
-+
-+The UI exposes a *Strategy Autopilot* section. It drives the ladder with:
-+
-+- Dual EMA crossover (fast vs. slow) combined with RSI levels to decide long/short/flat.
-+- Volatility-sensitive spacing: 1-minute bar volatility widens or tightens rung spacing and adjusts step count.
-+- Dynamic sizing: USD notionals are capped by your maximum deployment and scaled by a risk multiplier.
-+
-+Key inputs:
-+
-+| Field | Description |
-+| --- | --- |
-+| Fast/Slow EMA | Windows for trend direction. Slow must exceed fast. |
-+| RSI window / thresholds | Helps avoid buying into overbought or selling into oversold. |
-+| Base interval / steps | Baseline rung spacing and count before volatility adjustments. |
-+| Per-rung / Max deployment (USD) | Gross capital per rung and ceiling for the ladder. Converted to BTC using the latest price. |
-+| Volatility lookback | Number of 1-minute bars used for volatility estimates. |
-+| Risk multiplier | Scales interval/size responses up or down. |
-+| Poll seconds | How often the strategy re-evaluates market data. |
-+
-+The backend exposes matching endpoints:
-+
-+- `POST /api/start-autopilot` – start or retune the controller.
-+- `POST /api/stop-autopilot` – cancel the controller and flatten ladder management.
-+- `GET /api/autopilot-status` – JSON snapshot used by the UI.
-+
-+When the autopilot is running it will automatically stop any manual ladder instance, compute a new ladder config, and restart the bot as conditions change.
- 
-EOF
-)
+Alpaca BTC‑Ladder Prototype
+This project scaffolds a small FastAPI app that:
+
+pulls the latest BTC‑USD price from Alpaca’s crypto‑bars endpoint
+
+builds a grid (ladder) of limit orders
+
+keeps the ladder alive (cancel stray, place missing)
+
+tracks fills, net position, and realized P&L
+
+serves a simple web UI (chart + config + live status/logs)
+
+includes an automated “autopilot” controller that tunes the ladder using EMA + RSI signals
+
+How to run the current version
+Follow these steps on Windows PowerShell (commands also work on macOS/Linux with path tweaks):
+
+Clone or pull the repo
+
+powershell
+git clone https://github.com/ryanoZphoto/alpacatrade.git
+Set-Location alpacatrade
+If already cloned, run git pull from the project folder to update static assets.
+
+Create and activate a virtual environment
+
+powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+Install Python dependencies
+
+powershell
+pip install -r requirements.txt
+Configure credentials
+Copy and edit the environment file:
+
+powershell
+Copy-Item .env.example .env
+notepad .env
+Paste your Alpaca paper account key/secret. Leave the paper URLs unless you want live trading.
+
+Smoke-test the code
+
+powershell
+python -m compileall main.py
+Should finish without errors.
+
+Run the FastAPI server
+
+powershell
+uvicorn main:app --reload --port 8000
+Open the UI and force-refresh
+Visit http://127.0.0.1:8000/. Due to browser caching, press Ctrl+F5 (or Cmd+Shift+R on macOS) after pulling changes.
+
+Navigate the tabs in order
+
+Overview: Recommended workflow, account state, recent fills.
+
+Manual Ladder: Bot manual config and deployment.
+
+Autopilot: EMA/RSI controller.
+
+Market Data: Historic candle viewer.
+
+Shut down
+Hit Ctrl+C in the terminal when finished.
+
+Quick test (stand-alone)
+To verify the project still compiles:
+
+powershell
+python -m compileall main.py
+UI Map
+Overview – Dashboard with fills, metrics, ladder status, and step-by-step workflow.
+
+Manual Ladder – Presets, rung spacing, circuit breakers, preview what deploys.
+
+Autopilot – EMA/RSI controller console, grouped fieldsets, live capital/P&L chart, status timeline.
+
+Market Data – Historic BTC/USD candle viewer.
+
+Autopilot strategy
+The UI exposes a Strategy Autopilot section, driving the ladder with:
+
+Dual EMA crossover (fast vs. slow) and RSI levels: decide long/short/flat.
+
+Volatility-sensitive spacing: 1m bar volatility affects rung count and spacing.
+
+Dynamic sizing: USD notionals capped/scaled by user risk.
+
+Key inputs:
+
+Field	Description
+Fast/Slow EMA	Trend detection, slow > fast.
+RSI window/settings	Avoid entering in overbought/oversold.
+Base/step interval	Starting rung spacing/count before volatility adjustment.
+Per-rung/Max deploy	USD per rung and total ceiling, converted to BTC.
+Volatility lookback	# of 1min bars for volatility estimate.
+Risk multiplier	Scales rung/size up/down.
+Poll seconds	How often bot reevaluates market data.
+Endpoints:
+
+POST /api/start-autopilot – Start/retune controller.
+
+POST /api/stop-autopilot – Stop bot, flatten positions.
+
+GET /api/autopilot-status – UI data snapshot.
+
+Autopilot will flatten manual ladders, recompute and restart as needed if conditions change.
+
+Replace your README.md with the above for proper formatting and clarity. No patching step is needed; simply overwrite the file. If you need a shell command to overwrite it:
+
+powershell
+notepad C:\Users\ryano\Desktop\alpacatrade\README.md
+Paste the contents and save. Now your project’s README is clear and user-friendly.
