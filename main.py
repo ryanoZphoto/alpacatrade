@@ -720,11 +720,9 @@ async def sync_ladder(client: httpx.AsyncClient, cfg: LadderConfig, center_price
     step_prices = compute_step_prices(cfg, center_price)
     existing = await list_open_orders(client, cfg.symbol)
     existing_prices = {round(float(o.get("limit_price", 0.0)), 2): o for o in existing}
-    # Place any missing rungs
     for p in step_prices:
         if p not in existing_prices:
             await place_limit_order(client, cfg, price=p)
-    # Cancel extra rungs not in desired set
     for p, o in existing_prices.items():
         if p not in step_prices:
             await cancel_order(client, o["id"])
@@ -917,3 +915,8 @@ async def nudge_ladder(req: NudgeRequest):
         else:
             raise HTTPException(status_code=400, detail="direction must be 'up' or 'down'")
     return {"status": "ok", "manual_price": bot_manager.manual_price}
+'@ | Set-Content -Encoding UTF8 .\main.py
+
+# Verify and run
+python -m compileall .\main.py
+uvicorn main:app --reload --port 8000
