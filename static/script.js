@@ -15,6 +15,7 @@ if (window.Chart) {
     if (Chart.OhlcElement) Chart.register(Chart.OhlcElement);
 }
 
+// Tabs (Status | Chart)
 function escapeHtml(value) {
     return String(value)
         .replace(/&/g, '&amp;')
@@ -34,6 +35,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         const el = document.getElementById(tab);
         if (el) el.classList.remove('hidden');
         // Refresh status when switching back to Status tab
+        if (tab === 'status-tab') { refreshStatus(); refreshLogs(); }
         if (tab === 'overview-tab') { refreshStatus(); refreshLogs(); }
         if (tab === 'autopilot-tab') {
             const chart = ensureAutopilotChart();
@@ -142,74 +144,7 @@ async function apiPost(path, body) {
 
 /* ---------- Chart (optional) ---------- */
 document.getElementById('load-chart').addEventListener('click', async () => {
-    const symbol = document.getElementById('chart-symbol').value.trim();
-    const tf = document.getElementById('chart-timeframe').value;
-    try {
-        const data = await apiGet(
-            'bars',
-            { symbols: symbol, timeframe: tf, limit: 500 }
-        );
-        const container = data.bars || [];
-        const series = Array.isArray(container)
-            ? container
-            : (container[symbol] || container[symbol.replace('-', '/')] ||
-               container[Object.keys(container)[0]] || []);
-        const candles = series.map(b => ({
-            x: new Date(b.t || b.timestamp),
-            o: b.o ?? b.open,
-            h: b.h ?? b.high,
-            l: b.l ?? b.low,
-            c: b.c ?? b.close
-        }));
-        const ctx = document.getElementById('candles-canvas').getContext('2d');
-        const existing = Chart.getChart('candles-canvas');
-        if (existing) existing.destroy();
-        const unit = tf.includes('Day') ? 'day' : (tf.includes('Hour') ? 'hour' : 'minute');
-        // If candlestick controller not available, render a simple line as fallback
-        const hasCandle = !!(Chart.registry && Chart.registry.controllers.get && Chart.registry.controllers.get('candlestick'))
-            || !!Chart.CandlestickController;
-        const chartType = hasCandle ? 'candlestick' : 'line';
-        const chartData = hasCandle
-            ? { datasets: [{ label: String(symbol), data: candles }] }
-            : { datasets: [{ label: String(symbol), data: candles.map(c => ({ x: c.x, y: c.c })) }] };
-        window.candleChart = new Chart(ctx, {
-            type: chartType,
-            data: chartData,
-            options: {
-                responsive: true,
-                parsing: false,
-                scales: {
-                    x: { type: 'timeseries', time: { unit } },
-                    y: { type: 'linear', ticks: { callback: v => Number(v).toLocaleString() } }
-                }
-            }
-        });
-    } catch (e) { alert('Chart error: '+e.message); }
-});
-
-/* ---------- Ladder form ---------- */
-document.getElementById('ladder-form').addEventListener('submit', async e => {
-    e.preventDefault();
-    const f = e.target;
-    // Convert USD inputs to BTC using the latest price
-    const last = lastPriceCache || Number(document.getElementById('m-last')?.textContent.replace(/,/g,'')) || 0;
-    const usdPerRung = Number(f.size.value);
-    const usdMaxExposure = Number(f.max_exposure.value);
-    const sizeBtc = last ? (usdPerRung / last) : 0;
-    const maxBtc = last ? (usdMaxExposure / last) : 0;
-    const cfg = {
-        symbol: f.symbol.value.trim(),
-        direction: f.direction.value,
-        steps: Number(f.steps.value),
-        interval: Number(f.interval.value),
-        size: Number(sizeBtc.toFixed(8)),
-        max_exposure: Number(maxBtc.toFixed(8))
-    };
-    try { await apiPost('start-ladder', cfg); }
-    catch (err) { alert('Start error: '+err.message); }
-});
-document.getElementById('stop-btn').addEventListener('click', async () => {
-    try { await apiPost('stop-ladder', {}); }
+@@ -125,50 +213,91 @@ document.getElementById('stop-btn').addEventListener('click', async () => {
     catch (err) { alert('Stop error: '+err.message); }
 });
 
@@ -301,43 +236,7 @@ function computeRungs(last, direction, steps, interval) {
 }
 async function computePreview() {
     const f = document.getElementById('ladder-form');
-    const symbol = f.symbol.value.trim();
-    let last = Number(document.getElementById('m-last')?.textContent.replace(/,/g,'')) || 0;
-    if (!last) {
-        try {
-            const lp = await apiGet('bars', { symbols: symbol, timeframe: '1Min', limit: 1 });
-            const cont = lp.bars || {};
-            const arr = Array.isArray(cont) ? cont : (cont[symbol] || Object.values(cont)[0] || []);
-            last = arr?.[0]?.c || last;
-        } catch {}
-    }
-    const steps = Number(f.steps.value), interval = Number(f.interval.value), size = Number(f.size.value);
-    const rungs = computeRungs(last, f.direction.value, steps, interval);
-    const totalBtc = steps * size; const totalNotional = totalBtc * last;
-    const set = (id,v)=>{ const el=document.getElementById(id); if (el) el.textContent = (typeof v==='number')? v.toLocaleString(undefined,{maximumFractionDigits:2}):v; };
-    set('preview-total-btc', totalBtc); set('preview-total-notional', totalNotional);
-    set('preview-min', rungs[0]||0); set('preview-max', rungs[rungs.length-1]||0);
-    const list=document.getElementById('preview-list'); if (list) list.innerHTML = rungs.map(p=>`<li>$${p.toLocaleString()}</li>`).join('');
-    // preview usage vs capacity
-    const posBtc = Number((document.getElementById('m-position')?.textContent || '0').replace(/,/g,''));
-    const used = posBtc * last; set('preview-used', used); set('preview-remaining', Math.max(0, totalNotional - used));
-    // side panel mini rungs
-    const spR = document.getElementById('sp-rungs'); if (spR) spR.innerHTML = rungs.slice(0,8).map(p=>`<li>$${p.toLocaleString()}</li>`).join('');
-}
-['symbol','direction','steps','interval','size'].forEach(n=>{ const el=document.querySelector(`#ladder-form [name="${n}"]`); if(el) el.addEventListener('input', computePreview); });
-setTimeout(computePreview, 300);
-
-
-/* ---------- Auto‑refresh status & logs ---------- */
-function setText(id, value) { document.getElementById(id).textContent = value; }
-function setClass(el, cls) { el.classList.remove('positive','negative'); if (cls) el.classList.add(cls); }
-function fmt(n, d=2) { return Number(n).toLocaleString(undefined, {maximumFractionDigits: d}); }
-function renderOrders(tableId, orders) {
-    const tb = document.querySelector(`#${tableId} tbody`);
-    tb.innerHTML = orders.map(o => `
-        <tr>
-            <td>${o.side}</td>
-            <td>${o.qty ?? o.filled_qty}</td>
+@@ -212,97 +341,217 @@ function renderOrders(tableId, orders) {
             <td>${o.limit_price ?? o.filled_avg_price ?? ''}</td>
             <td>${o.status ?? ''}</td>
             <td title="${o.id}">${String(o.id).slice(0,8)}…</td>
@@ -555,30 +454,7 @@ async function refreshStatus() {
         // Side panel snapshot
         setText('sp-open', st.open_orders.length);
         setText('sp-position', fmt(st.position_qty,6));
-        setText('sp-avg', fmt(st.avg_price,2));
-        setText('sp-last', fmt(lastPriceCache,2));
-        const spUpnl = document.getElementById('sp-upnl');
-        if (spUpnl) { spUpnl.textContent = fmt(upnlVal,2); setClass(spUpnl, upnlVal>=0?'positive':'negative'); }
-        setText('sp-rpnl', fmt(st.realized_pnl,2));
-        setText('sp-used', fmt(capitalUsed,2));
-        setText('sp-remaining', fmt(remaining,2));
-        const rungMin = document.getElementById('preview-min')?.textContent || '-';
-        const rungMax = document.getElementById('preview-max')?.textContent || '-';
-        setText('sp-range', `$${rungMin} – $${rungMax}`);
-        setText('sp-action', st.last_action || '-');
-
-        // Top PnL & Funds Strip
-        setText('strip-pos', fmt(st.position_qty, 6));
-        setText('strip-avg', fmt(st.avg_price, 2));
-        const upEl = document.getElementById('strip-upnl');
-        if (upEl) { upEl.textContent = fmt(upnlVal, 2); setClass(upEl, upnlVal>=0?'positive':'negative'); }
-        const pct = (st.unrealized_pnl_pct != null) ? st.unrealized_pnl_pct : ((st.avg_price? ((lastPriceCache - st.avg_price)/st.avg_price*100):0));
-        setText('strip-upct', fmt(pct, 2));
-        const day = (st.day_realized_pnl_usd != null) ? st.day_realized_pnl_usd : 0;
-        const dayEl = document.getElementById('strip-day'); if (dayEl) { dayEl.textContent = fmt(day,2); setClass(dayEl, day>=0?'positive':'negative'); }
-        setText('strip-used', fmt(st.capital_used ?? capitalUsed, 2));
-        setText('strip-cap', fmt(st.capacity_remaining ?? remaining, 2));
-        setText('strip-open', st.open_order_count ?? st.open_orders.length);
+@@ -333,43 +582,46 @@ async function refreshStatus() {
 
         // Account funds (cash/equity/buying power)
         try {
