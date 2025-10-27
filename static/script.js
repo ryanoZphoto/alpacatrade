@@ -15,7 +15,7 @@ if (window.Chart) {
     if (Chart.OhlcElement) Chart.register(Chart.OhlcElement);
 }
 
-// Tabs (Status | Chart)
+// Tabs (Overview | Manual | Autopilot | Market)
 document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -25,9 +25,88 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         const el = document.getElementById(tab);
         if (el) el.classList.remove('hidden');
         // Refresh status when switching back to Status tab
-        if (tab === 'status-tab') { refreshStatus(); refreshLogs(); }
+        if (tab === 'overview-tab') { refreshStatus(); refreshLogs(); }
+        if (tab === 'autopilot-tab') {
+            const chart = ensureAutopilotChart();
+            if (chart) {
+                chart.data.datasets[0].data = autopilotHistory.map(d => ({ x: d.t, y: d.capital }));
+                chart.data.datasets[1].data = autopilotHistory.map(d => ({ x: d.t, y: d.pnl }));
+                chart.update();
+                chart.resize();
+            }
+        }
     });
 });
+
+const autopilotHistory = [];
+let autopilotChart = null;
+
+function ensureAutopilotChart() {
+    if (autopilotChart) return autopilotChart;
+    const canvas = document.getElementById('autopilot-usage-canvas');
+    if (!canvas || !window.Chart) return null;
+    if (!canvas.offsetWidth) return null;
+    const ctx = canvas.getContext('2d');
+    autopilotChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            datasets: [
+                {
+                    label: 'Capital Used (USD)',
+                    data: [],
+                    borderColor: '#2563eb',
+                    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                    fill: false,
+                    tension: 0.2,
+                    pointRadius: 0,
+                    yAxisID: 'y'
+                },
+                {
+                    label: 'Net P/L (USD)',
+                    data: [],
+                    borderColor: '#16a34a',
+                    backgroundColor: 'rgba(22, 163, 74, 0.1)',
+                    fill: false,
+                    tension: 0.2,
+                    pointRadius: 0,
+                    yAxisID: 'y1'
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            parsing: false,
+            scales: {
+                x: { type: 'time', time: { unit: 'minute' }, ticks: { autoSkip: true } },
+                y: {
+                    position: 'left',
+                    ticks: {
+                        callback: v => Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 })
+                    },
+                    title: { display: true, text: 'Capital Used (USD)' }
+                },
+                y1: {
+                    position: 'right',
+                    grid: { drawOnChartArea: false },
+                    ticks: {
+                        callback: v => Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 })
+                    },
+                    title: { display: true, text: 'Net P/L (USD)' }
+                }
+            },
+            plugins: {
+                legend: { position: 'bottom' },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => `${ctx.dataset.label}: $${Number(ctx.parsed.y).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+                    }
+                }
+            }
+        }
+    });
+    return autopilotChart;
+}
 
 async function apiGet(path, params = {}) {
     const url = new URL(`/api/${path}`, location.origin);
@@ -147,6 +226,47 @@ if (btnCancel) btnCancel.addEventListener('click', async ()=>{
     catch (e) { alert('Cancel-open error: '+e.message); }
 });
 
+/* ---------- Autopilot ---------- */
+const autopilotForm = document.getElementById('autopilot-form');
+if (autopilotForm) {
+    autopilotForm.addEventListener('submit', async e => {
+        e.preventDefault();
+        const fd = new FormData(autopilotForm);
+        const payload = {
+            symbol: String(fd.get('symbol') || '').trim(),
+            fast_window: Number(fd.get('fast_window')),
+            slow_window: Number(fd.get('slow_window')),
+            rsi_window: Number(fd.get('rsi_window')),
+            overbought: Number(fd.get('overbought')),
+            oversold: Number(fd.get('oversold')),
+            base_interval: Number(fd.get('base_interval')),
+            base_steps: Number(fd.get('base_steps')),
+            rung_notional: Number(fd.get('rung_notional')),
+            max_notional: Number(fd.get('max_notional')),
+            volatility_lookback: Number(fd.get('volatility_lookback')),
+            risk_multiplier: Number(fd.get('risk_multiplier')),
+            poll_seconds: Number(fd.get('poll_seconds')),
+        };
+        try {
+            await apiPost('start-autopilot', payload);
+            await refreshStatus();
+        } catch (err) {
+            alert('Autopilot start error: ' + err.message);
+        }
+    });
+}
+const stopAutoBtn = document.getElementById('stop-autopilot');
+if (stopAutoBtn) {
+    stopAutoBtn.addEventListener('click', async () => {
+        try {
+            await apiPost('stop-autopilot', {});
+            await refreshStatus();
+        } catch (err) {
+            alert('Autopilot stop error: ' + err.message);
+        }
+    });
+}
+
 // Presets
 const presets = {
     cons: { steps: 5, interval: 300, size: 0.005 },
@@ -234,6 +354,47 @@ function renderActivity(logLines) {
     `).join('');
 }
 
+function updateAutopilotPanel(auto) {
+    const stateBadge = document.getElementById('auto-state');
+    if (!stateBadge) return;
+    const running = !!(auto && auto.running);
+    stateBadge.textContent = running ? 'Running' : 'Idle';
+    stateBadge.className = running ? 'badge badge-on' : 'badge badge-off';
+    const startBtn = document.getElementById('start-autopilot');
+    const stopBtn = document.getElementById('stop-autopilot');
+    if (startBtn) startBtn.disabled = running;
+    if (stopBtn) stopBtn.disabled = !running;
+    const set = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val;
+    };
+    set('auto-last-signal', auto?.last_signal || '—');
+    set('auto-last-reason', auto?.last_reason || '—');
+    const decision = auto?.last_decision || {};
+    set('auto-trend', decision.trend_pct != null ? `${decision.trend_pct.toFixed(2)}%` : '—');
+    set('auto-vol', decision.volatility_pct != null ? `${decision.volatility_pct.toFixed(2)}%` : '—');
+    set('auto-rsi', decision.rsi != null ? decision.rsi.toFixed(2) : '—');
+    set('auto-price', decision.price != null ? fmt(decision.price, 2) : '—');
+    const applied = auto?.applied_ladder;
+    if (applied) {
+        const summary = `${applied.direction} · ${applied.steps} steps @ $${Number(applied.interval).toFixed(2)} (size ${Number(applied.size).toFixed(6)})`;
+        set('auto-applied', summary);
+    } else {
+        set('auto-applied', '—');
+    }
+    set('auto-last-run', auto?.last_run ? new Date(auto.last_run).toLocaleTimeString() : '—');
+    const errEl = document.getElementById('auto-error');
+    if (errEl) {
+        const hasError = !!auto?.last_error;
+        errEl.textContent = hasError ? auto.last_error : '—';
+        errEl.classList.toggle('negative', hasError);
+    }
+    const cfgEl = document.getElementById('auto-config');
+    if (cfgEl) {
+        cfgEl.textContent = auto?.config ? JSON.stringify(auto.config, null, 2) : '{}';
+    }
+}
+
 let lastPriceCache = 0;
 async function refreshStatus() {
     try {
@@ -281,6 +442,21 @@ async function refreshStatus() {
         setText('m-capused', fmt(capitalUsed, 2));
         setText('m-maxnotional', fmt(maxNotional, 2));
         setText('m-remaining', fmt(remaining, 2));
+        const realized = Number.isFinite(st.realized_pnl) ? st.realized_pnl : 0;
+        const netPnl = realized + (Number.isFinite(upnlVal) ? upnlVal : 0);
+        const point = {
+            t: new Date(),
+            capital: Number.isFinite(capitalUsed) ? capitalUsed : 0,
+            pnl: Number.isFinite(netPnl) ? netPnl : 0
+        };
+        autopilotHistory.push(point);
+        if (autopilotHistory.length > 240) autopilotHistory.shift();
+        const chart = ensureAutopilotChart();
+        if (chart) {
+            chart.data.datasets[0].data = autopilotHistory.map(d => ({ x: d.t, y: d.capital }));
+            chart.data.datasets[1].data = autopilotHistory.map(d => ({ x: d.t, y: d.pnl }));
+            chart.update('none');
+        }
         // highlight if near exposure cap
         if (st.position_qty >= maxExposureBtc * 0.95) {
             document.getElementById('m-position').classList.add('negative');
@@ -355,6 +531,8 @@ async function refreshStatus() {
         if (chipOrders) { chipOrders.textContent = openCount? `Open orders: ${openCount}` : 'Open orders: 0'; chipOrders.className = 'chip ' + (openCount? 'warn':'ok'); }
         const riskOK = document.getElementById('last-action')?.textContent.startsWith('OK:');
         if (chipRisk) { chipRisk.textContent = riskOK? 'Risk: OK' : 'Risk: Paused'; chipRisk.className = 'chip ' + (riskOK? 'ok':'err'); }
+
+        updateAutopilotPanel(st.autopilot);
     } catch (e) {
         document.getElementById('status-box').textContent = 'Error: '+e;
     }
@@ -373,3 +551,4 @@ setInterval(refreshStatus, 5000);
 setInterval(refreshLogs, 7000);
 refreshStatus();
 refreshLogs();
+ensureAutopilotChart();
