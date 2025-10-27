@@ -15,7 +15,7 @@ if (window.Chart) {
     if (Chart.OhlcElement) Chart.register(Chart.OhlcElement);
 }
 
-// Tabs (Status | Chart)
+// Tabs (Overview | Manual | Autopilot | Market)
 document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -25,13 +25,14 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         const el = document.getElementById(tab);
         if (el) el.classList.remove('hidden');
         // Refresh status when switching back to Status tab
-        if (tab === 'status-tab') { refreshStatus(); refreshLogs(); }
+        if (tab === 'overview-tab') { refreshStatus(); refreshLogs(); }
         if (tab === 'autopilot-tab') {
             const chart = ensureAutopilotChart();
             if (chart) {
                 chart.data.datasets[0].data = autopilotHistory.map(d => ({ x: d.t, y: d.capital }));
                 chart.data.datasets[1].data = autopilotHistory.map(d => ({ x: d.t, y: d.pnl }));
                 chart.update();
+                chart.resize();
             }
         }
     });
